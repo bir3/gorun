@@ -19,8 +19,7 @@ func main() {
 
 # Install
 
-todo: link to executables
-
+`go install github.com/bir3/gorun@latest`
 
 
 # Features
