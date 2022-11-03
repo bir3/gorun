@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"gorun/filelock"
+	"github.com/bir3/gorun/filelock"
 )
 
 func lock(t *testing.T, f *os.File) {

@@ -1,4 +1,4 @@
-module gorun
+module github.com/bir3/gorun
 
 go 1.19
 

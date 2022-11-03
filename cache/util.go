@@ -8,7 +8,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"gorun/filelock"
+	"github.com/bir3/gorun/filelock"
 	"io"
 	"os"
 	"strconv"

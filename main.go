@@ -7,7 +7,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"gorun/cache"
+	"github.com/bir3/gorun/cache"
 	"log"
 	"os"
 	"path"
