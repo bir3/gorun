@@ -19,7 +19,7 @@ func main() {
 
 # Install
 
-`go install github.com/bir3/gorun@latest`
+`go install github.com/bir3/gorun@v0.1.3`
 
 
 # Features
