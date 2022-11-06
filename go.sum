@@ -1,4 +1,4 @@
-github.com/bir3/gocompiler v0.2.0 h1:uzUgTXklbU8cZ+TZi7xMURKpGeqep2n75r26q4VwflQ=
-github.com/bir3/gocompiler v0.2.0/go.mod h1:JtJo3U9jhh1z8dg+nNdVwUam/cyJiuDbw1hod7vKBHk=
+github.com/bir3/gocompiler v0.2.3 h1:AaLv8OkRRO/4nLLwSUZnm7K5eSfSD34CJGXahG1yObo=
+github.com/bir3/gocompiler v0.2.3/go.mod h1:JtJo3U9jhh1z8dg+nNdVwUam/cyJiuDbw1hod7vKBHk=
 golang.org/x/sys v0.1.0 h1:kunALQeHf1/185U1i0GOB/fy1IPRDDpuoOOqRReG57U=
 golang.org/x/sys v0.1.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
