@@ -30,6 +30,7 @@ The executable is normally found in `$HOME/go/bin` - else see [go install docume
 - Runs without installing the Go toolchain as it's already embedded
 in the executable.  
 - Resulting executables are cached for fast startup.
+- Size of `gorun` is 75 MB - while Go toolchain is 490 MB
 
 # Limitations
 
