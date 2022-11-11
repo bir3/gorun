@@ -22,6 +22,7 @@ if host_os != "darwin" or host_arch != "arm64":
     print("ERROR: currently only works on mac with arm64")
     sys.exit(3)
 
+
 def write_file(f, s, exe=False):
     with open(f, "w") as fx:
         fx.write(s)
@@ -216,7 +217,6 @@ test_spec = [
 ]
 
 
-
 if not os.path.exists("tmp/stage1-ok"):
     # build cross-compiled executables
     os.mkdir("tmp")
@@ -250,6 +250,8 @@ if os.path.exists("tmp/stage1-ok"):
                 status = res.returncode
             else:
                 print("ok: ", cmdline, f"# {logfile}")
+
+    print("note: delete local tmp folder for full testrun")
     if status != 0:
         print("*** TEST FAILED ***")
     sys.exit(status)
