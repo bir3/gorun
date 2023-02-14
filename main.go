@@ -7,11 +7,12 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/bir3/gorun/cache"
 	"log"
 	"os"
 	"path"
 	"strings"
+
+	"github.com/bir3/gorun/cache"
 
 	"github.com/bir3/gocompiler"
 )
@@ -79,7 +80,7 @@ usage:
   gorun <single-file-go-code>  # first line can be #! /usr/bin/env gorun
 `
 		fmt.Printf("%s\n", strings.TrimSpace(helpStr))
-		fmt.Println("\ngo compiler version go1.19.3") // BUG: gocompiler should provide version string
+		fmt.Printf("\ngo compiler version %s\n", gocompiler.GoVersion())
 
 		if errCache == nil {
 			err := c.DeleteOld(0)

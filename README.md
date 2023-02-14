@@ -19,7 +19,7 @@ func main() {
 
 # Install
 
-`CGO_ENABLED=0 go install github.com/bir3/gorun@v0.1.4`
+`go install github.com/bir3/gorun@v0.1.196`
 
 So you do need the Go toolchain to build `gorun` - but once built, it runs standalone, e.g. on vanilla alpine linux
 
