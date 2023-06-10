@@ -19,9 +19,12 @@ func main() {
 
 # Install
 
-`go install github.com/bir3/gorun@v0.1.196`
+Download ready executables for linux or mac under [Releases](https://github.com/bir3/gorun/releases)
 
-So you do need the Go toolchain to build `gorun` - but once built, it runs standalone, e.g. on vanilla alpine linux
+# Install from source
+
+`go install github.com/bir3/gorun@v0.3.205`
+
 
 The executable is normally found in `$HOME/go/bin` - else see [go install documentation](https://pkg.go.dev/cmd/go#hdr-Compile_and_install_packages_and_dependencies)
 
@@ -30,7 +33,7 @@ The executable is normally found in `$HOME/go/bin` - else see [go install docume
 - Runs without installing the Go toolchain as it's already embedded
 in the executable.  
 - Resulting executables are cached for fast startup.
-- Size of `gorun` is 75 MB - while Go toolchain is 490 MB
+- Size of `gorun` is 44 MB - while Go toolchain is 262 MB
 
 # Limitations
 
