@@ -1,186 +1,437 @@
-// Copyright 2022 Bergur Ragnarsson
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package cache
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io/fs"
+	"math/rand"
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
-const GORUN_MAGIC_STRING = "https://github.com/bir3/gorun/CACHE_ITEM_MAGIC_STRING"
+// examples:
+// - if key always = "0" => the cache will only cache one item
+// - if key only "1", "2", .. "10" => cache will keep 10 items
+// and so on
 
-type Cache struct {
-	dir string
-	now func() time.Time
-}
+// requirements:
+//   - graceful failure: if locks are no-op, cache should still work mostly ok
+//   - protect against user error: if cache-dir is set to root '/', delete operation should delete
+//     zero or very few files
+//   - if user creates symlinks in cache dir, delete should only delete symlinks
+//   - if two or more P race to the same key and one process has started to create entry
+//     but fails before completion, another P will take over the task and complete it
+//   - out-of-disk space will no corrupt the cache, only fail it
+//		=> need validation of entry data, e.g. guard against truncation
+
+// bonus:
+//   - create primitive which guarantees one P will execute task, even though
+//  	many run at the same time
+//		= same as a cache like this, but can we make it simpler ?
+
+type LookupResult int
 
 const (
-	maxDeleteDuration = 500 * time.Millisecond
-	mtimeInterval     = 1 * time.Hour
-	trimInterval      = 24 * time.Hour
-	maxFileAge        = 5 * 24 * time.Hour
+	FOUND LookupResult = 16
+	NEW   LookupResult = 17
+	ERROR LookupResult = 99
 )
 
-func CacheInit(cacheDir string) *Cache {
-	var c Cache
-	c.now = time.Now // style from Go toolchain: src/cmd/go/internal/cache/cache.go
+const objectsFolder = "objects"
 
-	ensureDir(cacheDir)
+const infoSuffix = ".text" // clients must not use this suffix
 
-	dir2 := path.Join(cacheDir, "gorun")
-	c.dir = dir2
-	ensureDir(c.dir)
+type Config struct {
+	dir string // no trailing slashes
 
-	return &c
+	maxAge time.Duration // safe to delete objects older than this
+	/*
+		refreshAge      time.Duration  // reset age of objects older than this
+		lookupUntilRead time.Duration  // after release of lock, for how long is object guarantee to exist
+		reHash          *regexp.Regexp // validate hashstring
+
+		testTime    *time.Time
+		testLog     string
+		testDelayMs map[string]int
+	*/
 }
 
-func (c *Cache) Dir() string {
-	return c.dir
-}
-
-func (c *Cache) used(file string) error {
-	info, err := os.Stat(file)
-	if err != nil {
-		return err
+/*
+func (config *Config) now() time.Time {
+	if config.testTime != nil {
+		return *config.testTime
 	}
-	if timeDiff(c.now(), info.ModTime()) < mtimeInterval {
+	return time.Now()
+}
+*/
+
+func DefaultConfig() (*Config, error) {
+	maxAge := 10 * 24 * time.Hour
+	//log := false
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return nil, err
+	}
+	dir = path.Join(dir, "gorun")
+	return NewConfig(dir, maxAge)
+}
+
+func NewConfig(dir string, maxAge time.Duration) (*Config, error) {
+	// maxAge  refresh    grace
+	// 5 days     12 h     1 h
+	// 10 min      1 min   1 min
+	if maxAge < 10*time.Second {
+		return nil, fmt.Errorf("maxAge minimum is 10 seconds")
+	}
+	/*
+		refreshAge := maxAge / 10
+		lookupGraceDuration := maxAge / 10
+		if lookupGraceDuration > 1*time.Hour {
+			lookupGraceDuration = 1 * time.Hour
+		}
+	*/
+	//id := ""
+	if !utf8.Valid([]byte(dir)) {
+		return nil, fmt.Errorf("config dir is not utf8: %q", dir)
+	}
+	dir = path.Clean(dir) // only ends in trailing slash if root /
+	if !path.IsAbs(dir) || strings.Contains(dir, "\x00") {
+		return nil, fmt.Errorf("bad characters in config dir : %q", dir)
+	}
+
+	mkdirAllRace(dir) // review !
+
+	lockfile := path.Join(dir, "global.flock")
+	datafile := path.Join(dir, "config")
+
+	updateContent := func(old string, writeString func(new string) error) error {
+		final := "done"
+		//fmt.Println("# updateContent", old, final)
+		if old != final {
+			// create subdirs
+			for i := 0; i < 256; i++ {
+				name := filepath.Join(dir, fmt.Sprintf("%02x", i))
+				err := os.Mkdir(name, 0777)
+				if err != nil {
+					return err
+				}
+			}
+
+			return writeString(final)
+		}
+
 		return nil
 	}
-	return os.Chtimes(file, c.now(), c.now())
+
+	err := UpdateMultiprocess(lockfile, datafile, updateContent)
+	if err != nil {
+		return nil, err
+	}
+	return &Config{dir, maxAge}, nil
 }
 
-func (c *Cache) Stats() (int64, int, error) {
-	var size int64 = 0
-	var n int = 0
-	e := filepath.WalkDir(c.dir, func(path string, d fs.DirEntry, err error) error {
-		if err == nil && !d.IsDir() && d.Name() == "main" {
+type Stat struct {
+	Count     int
+	SizeBytes int64
+	Dir       string
+}
+
+func (config *Config) GetInfo() (Stat, error) {
+	info := Stat{}
+	for part := 0; part < 256; part++ {
+		config.GetPartInfo(&info, part)
+	}
+	info.Dir = config.dir
+	return info, nil
+}
+
+func (config *Config) GetPartInfo(stat *Stat, part int) {
+	hs2 := fmt.Sprintf("%02x", part)
+	dir := path.Join(config.dir, hs2)
+
+	e := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() { //&& d.Name() == "main" {
 			info, err := d.Info()
 			if err == nil {
-				size += info.Size()
-				n += 1
+				stat.SizeBytes += info.Size()
+				stat.Count += 1
 			}
 		}
 		return nil
 	})
 	if e != nil {
-		return 0, 0, e
+		return
 	}
-	return size, n, nil
 }
 
-func (c *Cache) isOld(filepath string, maxAge time.Duration) (bool, error) {
-	mtime, err := filepathModTime(filepath)
-	if err != nil {
-		return false, err
-	}
-	return timeDiff(c.now(), mtime) > maxAge, nil
-}
-
-func (c *Cache) shouldTrim() (string, error) {
-	trimfilepath := path.Join(c.dir, "trim.txt")
-
-	f, err := os.OpenFile(trimfilepath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
-	if err == nil {
-		err = f.Close()
-		if err != nil {
-			return "", err
+func (config *Config) DeleteExpiredItems() error {
+	var err error
+	for k := 0; k < 256; k++ {
+		err2 := config.DeleteExpiredPart(k)
+		if err2 != nil {
+			err = err2
 		}
 	}
-	// potential race so assume file exists by now
-	old, err := c.isOld(trimfilepath, trimInterval)
+	return err
+}
+
+func (config *Config) DeleteExpiredPart(part int) error {
+	if part < 0 {
+		part = 0
+	}
+	part = part % 256
+	hs2 := fmt.Sprintf("%02x", part)
+	glob := path.Join(config.dir, hs2, "*.lock")
+	//fmt.Println("# del", glob)
+	flist, err := filepath.Glob(glob)
+	if err != nil {
+		return fmt.Errorf("glob failed - %w", err)
+	}
+	for _, lockfile := range flist {
+		fmt.Printf("delete scan %s\n", lockfile)
+		datafile := lockfile[0:len(lockfile)-5] + ".info"
+		Lockedfile(lockfile, ExclusiveLock, func() error {
+			buf, err := os.ReadFile(datafile)
+			if err == nil {
+				obj, err := str2item(string(buf))
+				if err == nil {
+					// delete items older than maxAge
+					age := obj.age()
+					if age > config.maxAge {
+						//fmt.Printf("*** expired item found, age=%s\n", age)
+						//fmt.Printf("*** dir=%s\n", obj.objdir)
+
+						// TODO: clean up all folders inside given hash
+						// in case partial create leftovers there
+						os.RemoveAll(obj.objdir)
+					}
+				} else {
+					fmt.Printf("#x - item parse failed\n")
+				}
+
+				// is expired ?
+
+			}
+			return nil
+		})
+	}
+	return nil
+}
+
+const tsFormat = "2006-01-02T15:04:05.999Z07:00"
+
+type Item struct {
+	objdir          string
+	refreshTime     int64
+	refreshTimeNano int // only to support faster tests
+}
+
+func (obj *Item) refresh() {
+	t := time.Now()
+	obj.refreshTime = t.Unix()
+	obj.refreshTimeNano = t.Nanosecond()
+}
+func (obj *Item) age() time.Duration {
+	t2 := time.Unix(obj.refreshTime, int64(obj.refreshTimeNano))
+	dt := time.Since(t2)
+	return dt.Abs()
+}
+
+func item2str(obj Item) string {
+	return fmt.Sprintf("%s %d %d\n", obj.objdir, obj.refreshTime, obj.refreshTimeNano)
+}
+
+func str2item(s string) (Item, error) {
+	// format: objdir + " " + unixtime + "\n"
+	// extra content after newline is allowed and ignored
+	//var t time.Time
+	k := strings.Index(s, "\n")
+	if k < 0 {
+		return Item{"", 0, 0}, fmt.Errorf("parse, missing newline")
+	}
+	s = s[0:k]
+	e := strings.Fields(s)
+	if len(e) != 3 {
+		return Item{"", 0, 0}, fmt.Errorf("parse, not three fields: %q", e)
+	}
+	var err error
+	i, err := strconv.ParseInt(e[1], 10, 64)
+	if err != nil {
+		return Item{"", 0, 0}, fmt.Errorf("parse int failed: %q - %w", e[1], err)
+	}
+	iNano, err := strconv.Atoi(e[2])
+	if err != nil {
+		return Item{"", 0, 0}, fmt.Errorf("parse int failed: %q - %w", e[2], err)
+	}
+	//t, err = time.Parse(tsFormat, e[2])
+	return Item{e[0], i, iNano}, nil
+
+}
+
+func hashString(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	// always 64 characters, even with leading zero
+	return fmt.Sprintf("%x", sum)
+}
+
+func randomHash() string {
+	rand.Seed(time.Now().UnixNano())
+	uid := fmt.Sprintf("%d", rand.Int63())
+	return hashString(uid)
+}
+
+func Lookup(input string, create func(outDir string) error) (string, error) {
+	config, err := DefaultConfig()
 	if err != nil {
 		return "", err
 	}
-	if !old {
-		return "", nil
-	}
-	// multiple processes can race here
-	// - try to minimize those that get through without
-	trimlockfile := path.Join(c.dir, "trim-lock.txt")
-	f, err = os.OpenFile(trimlockfile, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
-	if err != nil {
-		// we lost !
-		old, err = c.isOld(trimlockfile, mtimeInterval)
-		if err == nil && old {
-			// cleanup - potential race so ignore error
-			os.Remove(trimlockfile)
-		}
-		return "", nil
-	}
-	err = c.used(trimfilepath)
-	err2 := f.Close()
-	if err != nil {
-		return "", err
-	}
-	if err2 != nil {
-		return "", err2
-	}
-	return trimlockfile, nil
+	const useCache = true
+	return config.Lookup2(input, create, useCache)
+}
+func (config *Config) Lookup(input string, create func(outDir string) error) (string, error) {
+	const useCache = true
+	return config.Lookup2(input, create, useCache)
 }
 
-func (c *Cache) DeleteOld(maxDuration time.Duration) error {
-	trimlockfile, err := c.shouldTrim()
+func (config *Config) Lookup2(input string, create func(outDir string) error, useCache bool) (string, error) {
+	hs := hashString(input)
+	prefix := path.Join(config.dir, hs[0:2], hs)
+	err := ensureDir2(prefix)
 	if err != nil {
-		return err
+		return "/invalid/outdir-1", fmt.Errorf("failed to create prefix dir %q - %w", prefix, err)
 	}
-	if len(trimlockfile) == 0 {
+	lockfile := prefix + ".lock"
+	datafile := prefix + ".info"
+
+	outdir := path.Join(prefix, randomHash()[0:8]) // 8 chars = 32 bits
+	updateContent := func(old string, writeString func(new string) error) error {
+
+		if old == "" {
+			// object not created yet
+			err := os.Mkdir(outdir, 0777)
+			if err != nil {
+				return fmt.Errorf("outdir %q already exists - program error", outdir)
+			}
+			err = create(outdir)
+			if err != nil {
+				return err
+			}
+			var obj Item
+			obj.objdir = outdir
+			obj.refresh()
+			err = writeString(item2str(obj))
+			if err != nil {
+				return err
+			}
+			return nil
+		} else {
+			obj, err := str2item(old)
+			if err != nil {
+				return fmt.Errorf("cache corruption in file %q - %w", datafile, err)
+			}
+
+			outdir = obj.objdir
+			age := obj.age()
+			if age > config.maxAge/10 {
+				fmt.Printf("### age=%s => refresh file %q\n", age, datafile)
+				obj.refresh()
+			}
+			err = writeString(item2str(obj))
+			if err != nil {
+				return fmt.Errorf("cache refresh failed for file %q - %w", datafile, err)
+			}
+
+		}
 		return nil
 	}
-	t0 := c.now()
-	n := 0
-	errWalk := filepath.WalkDir(c.dir, func(filepath string, d fs.DirEntry, err error) error {
-		if err == nil && !d.IsDir() && (d.Name() == "main" || d.Name() == "main-tmp") {
-			n = n + 1
-			old, err := c.isOld(filepath, maxFileAge)
-			if err == nil && old {
-				// file is old enough to be candidate for deletion
-				c.tryDelete(filepath)
-			}
-		}
-		if err == nil {
-			dt := timeDiff(t0, c.now())
-			if maxDuration > 0 && dt > maxDuration {
-				msg := fmt.Sprintf("slow DeleteOld : exiting after %d and %d items", dt, n)
-				logmsg(msg)
-				return fmt.Errorf("%s", msg)
-			}
-		}
-		return err
-	})
-	os.Remove(trimlockfile)
-	return errWalk
+	err = UpdateMultiprocess(lockfile, datafile, updateContent)
+	if err != nil {
+		return "/invalid/outdir", err
+	}
+	return outdir, nil
 }
 
-func (c *Cache) tryDelete(filepath string) {
-	if path.IsAbs(filepath) {
-		modfile := path.Join(path.Dir(filepath), "go.mod")
-		b, err := os.ReadFile(modfile)
-		if err != nil {
-			return
-		}
-		s := string(b)
-		if strings.Contains(s, GORUN_MAGIC_STRING) {
-			f, err := openFileAndLock(modfile)
-			if err != nil {
-				return
-			}
-			// still old ?
-			old, err := c.isOld(filepath, maxFileAge)
-			if err == nil && old {
-				err = os.Remove(filepath)
-				if err == nil {
-					logmsg(fmt.Sprintf("cache item %s deleted", filepath))
-				}
-			}
-			unlockAndClose(f)
+/*
+func (config *Config) log(msg string) {
+	if config.testLog != "" {
+		fmt.Printf("%s\n", msg)
+	}
+}
+
+func (config *Config) log2(msg string) {
+	if config.testLog != "" {
+		fmt.Printf("%d : %s\n", time.Now().UnixMilli()%1000, msg)
+	}
+}
+
+func (config *Config) testDelay(key string) {
+	if config.testDelayMs != nil {
+		if config.testDelayMs[key] > 0 {
+			n := config.testDelayMs[key]
+			config.log(fmt.Sprintf("testDelay %s : %d ms", key, n))
+			time.Sleep(time.Millisecond * time.Duration(n))
+		} else {
+			// fmt.Printf("id %s : warning unknown testDelay %s\n", config.testLog, key)
 		}
 	}
+}
 
+func timeDiff(t1 time.Time, t2 time.Time) time.Duration {
+	if t1.After(t2) {
+		return t1.Sub(t2)
+	} else {
+		return t2.Sub(t1)
+	}
+}
+*/
+
+func mkdirAllRace(dir string) error {
+	if !path.IsAbs(dir) {
+		panic(fmt.Sprintf("program error: dir %s not abs", dir))
+	}
+	missing := findDir(dir, []string{})
+
+	for i := len(missing) - 1; i >= 0; i-- {
+		os.Mkdir(missing[i], 0777) // ignore error as we may race
+	}
+
+	// at the end, we want a folder to exist
+	// - no matter who created it:
+	info, err := os.Stat(dir)
+	if err != nil {
+		return fmt.Errorf("failed to create folder %s - %w", dir, err)
+	}
+	if info.IsDir() {
+		return nil
+	}
+	return fmt.Errorf("failed to create folder %s - unexpected filetype", dir)
+}
+
+func findDir(dir string, missing []string) []string {
+	info, err := os.Stat(dir)
+	if err == nil && info.IsDir() {
+		return missing
+	}
+	d2 := path.Dir(dir)
+	missing = append(missing, dir)
+	if d2 != dir {
+		return findDir(d2, missing)
+	}
+	return missing
+}
+
+func ensureDir2(dir string) error {
+	fileinfo, err := os.Stat(dir)
+	if err == nil && fileinfo.IsDir() {
+		return nil
+	}
+	if err != nil {
+		return os.Mkdir(dir, 0777)
+	}
+	return nil
 }

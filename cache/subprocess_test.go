@@ -1,4 +1,4 @@
-package cache2
+package cache
 
 import (
 	"encoding/base64"

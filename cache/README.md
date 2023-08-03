@@ -54,6 +54,14 @@ func (config *Config) MaxAge() time.Duration
 // all expired items
 func (config *Config) DeleteExpiredItems(part int) error
 
+type Info struct {
+    itemCount int
+    totalItemSizeBytes int64
+}
+func (config*Config) GetInfo() (Info, error)
+
+func (config *Config) DeleteExpiredItems(part int) error
+
 // delete all cache items 
 // - only safe if no concurrent cache usage
 func (config *Config) UnsafeDeleteAll() error

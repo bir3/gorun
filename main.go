@@ -54,14 +54,6 @@ func errExit(msg string) {
 	os.Exit(3)
 }
 
-func cacheObject() (*cache.Cache, error) {
-	cdir, err := os.UserCacheDir()
-	if err != nil {
-		return nil, err
-	}
-	return cache.CacheInit(cdir), nil
-}
-
 func main() {
 
 	// the go toolchain is built into the executable and must be given a chance to run
@@ -72,7 +64,6 @@ func main() {
 	}
 
 	args := os.Args[1:]
-	c, errCache := cacheObject()
 
 	if len(args) == 0 || len(args) == 1 && isHelpArg(args[0]) {
 		helpStr := `
@@ -82,14 +73,16 @@ usage:
 		fmt.Printf("%s\n", strings.TrimSpace(helpStr))
 		fmt.Printf("\ngo compiler version %s\n", gocompiler.GoVersion())
 
+		c, errCache := cache.DefaultConfig()
+
 		if errCache == nil {
-			err := c.DeleteOld(0)
+			err := c.DeleteExpiredItems() //  c.DeleteOld(0)
 			if err != nil {
 				fmt.Printf("cache trim error: %s\n", err)
 			}
-			sizeBytes, n, err := c.Stats()
+			info, err := c.GetInfo()
 			if err == nil {
-				fmt.Printf("cache size is %d MB for %d items in %s\n", sizeBytes/1e6, n, c.Dir())
+				fmt.Printf("cache size is %d MB for %d items in %s\n", info.SizeBytes/1e6, info.Count, info.Dir)
 			} else {
 				fmt.Printf("cache stat error : %s\n", err)
 			}
@@ -103,8 +96,12 @@ usage:
 		}
 		return
 	}
-	cache.Loginit()
-
+	//cache.Loginit()
+	c, err := cache.DefaultConfig()
+	if err != nil {
+		fmt.Printf("cache init failed: %s\n", err)
+		os.Exit(7)
+	}
 	showFlag := false
 	remain := make([]string, 0)
 	for len(args) > 0 {
@@ -131,7 +128,7 @@ usage:
 
 	filename := absPath(args[0])
 
-	var err error
+	//var err error
 
 	s := readFileAndStrip(filename)
 	err = cache.RunString2(c, filename, s, args[1:], showFlag)
