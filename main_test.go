@@ -85,7 +85,7 @@ func run(exefile string, code string, args []string, extraEnv string) (string, e
 
 	err = cmd.Run()
 	s := out.String()
-	//stdout, err := exec.Command(exefile).CombinedOutput()
+
 	if err != nil {
 		return s, err
 	}
@@ -113,7 +113,7 @@ func TestCompileError(t *testing.T) {
 		return
 	}
 
-	if strings.Contains(s, `imported and not used: "fmt"`) {
+	if strings.Contains(s, `"fmt" imported and not used`) {
 		return // pass
 	}
 	t.Error("expected error message")

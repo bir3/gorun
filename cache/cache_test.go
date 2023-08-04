@@ -262,20 +262,16 @@ func TestDelete(t *testing.T) {
 	}
 	createObj(config, "aa")
 	createObj(config, "bb")
+	config.DeleteExpiredItems()
 	expectCountFiles(t, d, "some-", 2)
-
-	for i := 0; i < 256; i++ {
-		config.DeleteExpiredItems(i)
-	}
 
 	time.Sleep(210 * time.Millisecond) // all objects expired by now
 	fmt.Println("---- after sleep 210ms ----")
 
 	createObj(config, "bb")
 
-	for i := 0; i < 256; i++ {
-		config.DeleteExpiredItems(i)
-	}
+	config.DeleteExpiredItems()
+
 	log.Printf("*** after wait\n")
 
 	expectCountFiles(t, d, "some-", 1)
