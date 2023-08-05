@@ -7,7 +7,6 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/bir3/gocompiler"
 	"github.com/bir3/gorun/cache"
@@ -19,22 +18,17 @@ type CompileError struct {
 	Err    error
 }
 
-/*
-	func (c *CompileError) Error() string {
-		return fmt.Sprintf("stdout:\n%s\nstderr:%s\nerr: %s", c.Stdout, c.Stderr, c.Err)
-	}
-*/
-func (e *CompileError) Error() string { return e.Err.Error() }
+func (c *CompileError) Error() string {
+	return fmt.Sprintf("stdout:\n%s\nstderr:%s\nerr: %s", c.Stdout, c.Stderr, c.Err)
+}
+
+//func (e *CompileError) Error() string { return e.Err.Error() }
 
 //func (e *CompileError) Unwrap() error { return e.Err }
 
-func writeFileAndCompile(srcfile string, exefile string, s string) error {
+func compile(srcfile string, exefile string, s string) error {
 
-	err := os.WriteFile(srcfile, []byte(s), 0666)
-	if err != nil {
-		return fmt.Errorf("failed to write %s - %w", srcfile, err)
-	}
-	cmd, err := gocompiler.Command(os.Environ(), "go", "build", "-o", "main", "main.go")
+	cmd, err := gocompiler.Command(os.Environ(), "go", "build", "main.go")
 	if err != nil {
 		return fmt.Errorf("failed to create exec.Cmd object - %w", err)
 	}
@@ -53,35 +47,7 @@ func writeFileAndCompile(srcfile string, exefile string, s string) error {
 	return nil
 }
 
-func buildexe(c *cache.Config, srcpath, gofile string, modfile string, exefile string, s string) error {
-	//goRunVersion := "x" // FIXME
-	hash := "xx" // hashString(goRunVersion + "#" + s) // if options, need them here
-
-	err := writeModfile(modfile, srcpath, hash) // if exit after this point, modfile will say executable may exist
-	if err != nil {
-		return fmt.Errorf("failed to create file %s - %w", modfile, err)
-	}
-
-	//logmsg("compile: start")
-	err = writeFileAndCompile(gofile, exefile, s)
-	if err != nil {
-		switch err.(type) {
-		case *CompileError:
-			return err
-		default:
-			return fmt.Errorf("failed to build exe %s - %w", exefile, err)
-		}
-
-	}
-	//logmsg("compile: done")
-
-	// c.DeleteOld(maxDeleteDuration)
-
-	return nil
-}
-
-func writeModfile(modfile string, filepath string, hash string) error {
-	goModString := `module gorun
+const goModString = `module main
 
 go 1.18
 
@@ -89,14 +55,6 @@ go 1.18
 // file $file
 
 `
-
-	goModString = strings.ReplaceAll(goModString, "$hash", hash)
-	goModString = strings.ReplaceAll(goModString, "$file", filepath)
-
-	err := os.WriteFile(modfile, []byte(goModString), 0666)
-
-	return err
-}
 
 func RunString2(c *cache.Config, srcpath string, s string, args []string, showFlag bool) error {
 	// simple cache: only store one copy per unique filepath
@@ -111,7 +69,26 @@ func RunString2(c *cache.Config, srcpath string, s string, args []string, showFl
 		exefile := filepath.Join(outdir, "main")
 		gofile := filepath.Join(outdir, "main.go")
 
-		err := buildexe(c, srcpath, gofile, modfile, exefile, s)
+		hash := "xx" // hashString(goRunVersion + "#" + s) // if options, need them here
+
+		// write go.mod
+		modstr := goModString
+		modstr = strings.ReplaceAll(modstr, "$hash", hash)
+		modstr = strings.ReplaceAll(modstr, "$file", srcpath)
+
+		err := os.WriteFile(modfile, []byte(modstr), 0666)
+
+		if err != nil {
+			return fmt.Errorf("failed to create file %s - %w", modfile, err)
+		}
+
+		// write main.go
+		err = os.WriteFile(gofile, []byte(s), 0666)
+		if err != nil {
+			return fmt.Errorf("failed to write %s - %w", gofile, err)
+		}
+		err = compile(gofile, exefile, s)
+
 		return err
 	})
 
@@ -136,14 +113,4 @@ func RunString2(c *cache.Config, srcpath string, s string, args []string, showFl
 		return sysExec(exefile, args)
 	}
 	return nil
-}
-
-func sysExec(exefile string, args []string) error {
-	args2 := []string{exefile}
-	args2 = append(args2, args...)
-	err := syscall.Exec(exefile, args2, os.Environ())
-	if err != nil {
-		return fmt.Errorf("syscall.Exec failed for %s - %w", exefile, err)
-	}
-	return nil // unreachable - exec should not return
 }

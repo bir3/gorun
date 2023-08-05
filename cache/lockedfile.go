@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"io"
@@ -43,8 +42,7 @@ func updateDatafile(datafile string, update func(old string, writeString func(ne
 	}
 
 	var b bytes.Buffer
-	buf := bufio.NewWriter(&b)
-	_, err = io.Copy(buf, file)
+	_, err = io.Copy(&b, file)
 	if err != nil {
 		return fmt.Errorf("read file %q failed - %w", datafile, err)
 	}

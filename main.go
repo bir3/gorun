@@ -19,6 +19,10 @@ import (
 	"github.com/bir3/gorun/run2"
 )
 
+func gorunVersion() string {
+	return "0.4"
+}
+
 func readFileAndStrip(filename string) string {
 	var s string
 	if filename == "-" {
@@ -75,8 +79,9 @@ usage:
 
 filename "-" for stdin
 	`
-	fmt.Printf("%s\n", strings.TrimSpace(helpStr))
-	fmt.Printf("\ngo compiler version %s\n", gocompiler.GoVersion())
+	fmt.Printf("%s\n\n", strings.TrimSpace(helpStr))
+	fmt.Printf("gorun version %s\n", gorunVersion())
+	fmt.Printf("go compiler version %s\n", gocompiler.GoVersion())
 
 	c, errCache := cache.DefaultConfig()
 
@@ -137,7 +142,7 @@ func main() {
 		if help {
 			return
 		} else {
-			errExit("missing file to run")
+			errExit("ERROR: missing file to run")
 		}
 	}
 	var err error
