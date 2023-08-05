@@ -193,7 +193,7 @@ func (config *Config) DeleteExpiredPart(part int) error {
 		return fmt.Errorf("glob failed - %w", err)
 	}
 	for _, lockfile := range flist {
-		fmt.Printf("delete scan %s\n", lockfile)
+		//fmt.Printf("delete scan %s\n", lockfile)
 		datafile := lockfile[0:len(lockfile)-5] + ".info"
 		Lockedfile(lockfile, ExclusiveLock, func() error {
 			buf, err := os.ReadFile(datafile)
@@ -211,7 +211,7 @@ func (config *Config) DeleteExpiredPart(part int) error {
 						os.RemoveAll(obj.objdir)
 					}
 				} else {
-					fmt.Printf("#x - item parse failed\n")
+					//fmt.Printf("#x - item parse failed\n")
 				}
 
 				// is expired ?
@@ -338,7 +338,7 @@ func (config *Config) Lookup2(input string, create func(outDir string) error, us
 			outdir = obj.objdir
 			age := obj.age()
 			if age > config.maxAge/10 {
-				fmt.Printf("### age=%s => refresh file %q\n", age, datafile)
+				//fmt.Printf("### age=%s => refresh file %q\n", age, datafile)
 				obj.refresh()
 			}
 			err = writeString(item2str(obj))
