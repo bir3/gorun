@@ -16,7 +16,7 @@ import (
 
 	"github.com/bir3/gocompiler"
 	"github.com/bir3/gorun/cache"
-	"github.com/bir3/gorun/run"
+	"github.com/bir3/gorun/run2"
 )
 
 func readFileAndStrip(filename string) string {
@@ -156,11 +156,11 @@ func main() {
 		os.Exit(7)
 	}
 
-	err = run.RunString2(c, filename, s, programArgs, showFlag)
+	err = run2.RunString2(c, filename, s, programArgs, showFlag)
 
 	if err != nil {
 		switch errX := err.(type) {
-		case *run.CompileError:
+		case *run2.CompileError:
 			fmt.Printf("ERROR: %s\n", errX.Err)
 			fmt.Printf("%s", errX.Stdout)
 			fmt.Printf("%s", errX.Stderr)
