@@ -50,7 +50,7 @@ func ensureDir(dir string) {
 	// => only care that result is a dir
 	_, err := os.Stat(dir)
 	if err != nil {
-		err = os.Mkdir(dir, 0755)
+		os.Mkdir(dir, 0755)
 	}
 }
 func runArgs(exefile, code string, args []string) (string, error) {
@@ -58,10 +58,12 @@ func runArgs(exefile, code string, args []string) (string, error) {
 	return s, err
 }
 
-func run2(exefile, code string) (string, error) {
-	s, err := run(exefile, code, []string{}, "")
-	return s, err
-}
+/*
+	func run2(exefile, code string) (string, error) {
+		s, err := run(exefile, code, []string{}, "")
+		return s, err
+	}
+*/
 func run(exefile string, code string, args []string, extraEnv string) (string, error) {
 	err := os.WriteFile(exefile, []byte(code), 0755)
 	if err != nil {
@@ -281,8 +283,6 @@ func runUpdate(t *testing.T, ch chan updateMsg, color string, args []string) err
 		fmt.Printf("runUpdate: ERROR; %v - %s\n", err, s)
 		ch <- updateMsg{s, err}
 		return err
-	} else {
-		//fmt.Printf("runUpdate: ok, %s\n", s)
 	}
 	ch <- updateMsg{s, nil} // send msg
 	return nil

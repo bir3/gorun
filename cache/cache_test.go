@@ -127,7 +127,7 @@ func TestRefresh(t *testing.T) {
 
 	// verify repeated lookups keep item alive past normal expire
 
-	for _ = range []int{1, 2, 3, 4, 5, 6} {
+	for range []int{1, 2, 3, 4, 5, 6} {
 		objdir2, err := config.Lookup("bb", func(objdir string) error {
 			t.Fatalf("unexpected create event")
 			return nil
@@ -190,7 +190,7 @@ func TestLookup(t *testing.T) {
 		{{$.exe}} --entry=lookupSubprocess --map=tmpdir64={{$.tmpdir64}}
 		{{$.exe}} --entry=lookupSubprocess --map=tmpdir64={{$.tmpdir64}}
 		`, m))
-	return
+
 	/*
 		cleanTmpDir(t)
 		out := testLookup(t, template2str(`
@@ -303,6 +303,7 @@ func TestDelete(t *testing.T) {
 	*/
 }
 
+/*
 func create(objDir string) error {
 	if !path.IsAbs(objDir) {
 		panic(fmt.Sprintf("program error: create objDir is not abspath : %s", objDir))
@@ -335,10 +336,11 @@ func (config *Config) setDelay(s string) {
 					panic(fmt.Sprintf("bad initDelay string: %s ; can't convert %s to int", s, value))
 				}
 				config.testDelayMs[key] = valueInt
-			*/
+
 		}
 	}
 }
+*/
 
 type CmdResult struct {
 	id  int
@@ -346,6 +348,7 @@ type CmdResult struct {
 	err error
 }
 
+/*
 func verify(out string, spec string) {
 	expect := strings.Split(spec, ",")
 	for _, line := range strings.Split(out, "\n") {
@@ -362,6 +365,7 @@ func verify(out string, spec string) {
 	}
 	//fmt.Println("expect ok")
 }
+*/
 
 func filter(slist []string, f func(s string) bool) []string {
 	out := []string{}

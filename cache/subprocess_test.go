@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 	"path"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +17,8 @@ var testEntry = flag.String("entry", "", "child process entry-point")
 var testId = flag.String("id", "", "child process id")
 var testDelay = flag.String("delay", "", "delay map for process")
 var testMap = flag.String("map", "", "key-value map")
-var testExpire = flag.Int("expire_ms", 0, "expire age in milliseconds")
+
+//var testExpire = flag.Int("expire_ms", 0, "expire age in milliseconds")
 
 func TestMain(m *testing.M) {
 	// In some build systems, notably Blaze, flag.Parse is called before TestMain,
@@ -72,6 +72,7 @@ func createMap(s string) map[string]string {
 	return m
 }
 
+/*
 func num(m map[string]string, key string) int {
 	valueInt, err := strconv.Atoi(m[key])
 	if err != nil {
@@ -79,6 +80,7 @@ func num(m map[string]string, key string) int {
 	}
 	return valueInt
 }
+*/
 
 func get(m map[string]string, key string) string {
 	val := m[key]
@@ -184,7 +186,6 @@ func deleteSubprocess(id string, delay string, expire_ms int, m map[string]strin
 	//time.Sleep(time.Millisecond * 10)
 	config.DeleteExpiredObjects()
 }
-*/
 
 func mustWriteFile(filename string, data string) {
 	err := os.WriteFile(filename, []byte(data), 0666)
@@ -192,6 +193,7 @@ func mustWriteFile(filename string, data string) {
 		panic(err)
 	}
 }
+*/
 
 func countFiles(d string, prefix string) int {
 	fileSystem := os.DirFS(d)

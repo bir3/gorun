@@ -42,10 +42,6 @@ const (
 	ERROR LookupResult = 99
 )
 
-const objectsFolder = "objects"
-
-const infoSuffix = ".text" // clients must not use this suffix
-
 type Config struct {
 	dir string // no trailing slashes
 
@@ -210,8 +206,6 @@ func (config *Config) DeleteExpiredPart(part int) error {
 						// in case partial create leftovers there
 						os.RemoveAll(obj.objdir)
 					}
-				} else {
-					//fmt.Printf("#x - item parse failed\n")
 				}
 
 				// is expired ?
@@ -223,7 +217,7 @@ func (config *Config) DeleteExpiredPart(part int) error {
 	return nil
 }
 
-const tsFormat = "2006-01-02T15:04:05.999Z07:00"
+//const tsFormat = "2006-01-02T15:04:05.999Z07:00"
 
 type Item struct {
 	objdir          string
