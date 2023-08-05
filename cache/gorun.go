@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path"
@@ -32,10 +33,20 @@ func writeFileAndCompile(srcfile string, exefile string, s string) error {
 	if err != nil {
 		return fmt.Errorf("failed to write %s - %w", srcfile, err)
 	}
-
-	result, err := gocompiler.Run("go", "build", "-o", exefile, srcfile)
+	cmd, err := gocompiler.Command(os.Environ(), "go", "build", "-o", "main", "main.go")
 	if err != nil {
-		return &CompileError{result.Stdout, result.Stderr, err}
+		return fmt.Errorf("failed to create exec.Cmd object - %w", err)
+	}
+	cmd.Dir = filepath.Dir(exefile)
+	var out bytes.Buffer
+	var outerr bytes.Buffer
+
+	cmd.Stdout = &out
+	cmd.Stderr = &outerr
+	err = cmd.Run()
+
+	if err != nil {
+		return &CompileError{out.String(), outerr.String(), err}
 	}
 
 	return nil
