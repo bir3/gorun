@@ -1,28 +1,38 @@
-// Copyright 2022 Bergur Ragnarsson
+// Copyright 2023 Bergur Ragnarsson
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 
-	"github.com/bir3/gorun/cache"
-
 	"github.com/bir3/gocompiler"
+	"github.com/bir3/gorun/cache"
+	"github.com/bir3/gorun/run"
 )
 
 func readFileAndStrip(filename string) string {
-	b, err := os.ReadFile(filename)
-	if err != nil {
-		errExit(fmt.Sprintf("failed to read file %s", filename))
+	var s string
+	if filename == "-" {
+		var out bytes.Buffer
+		io.Copy(&out, os.Stdin)
+		s = out.String()
+	} else {
+		b, err := os.ReadFile(filename)
+		if err != nil {
+			errExit(fmt.Sprintf("failed to read file %s", filename))
+		}
+		s = string(b)
 	}
-	s := string(b)
+
 	if strings.HasPrefix(s, "#!") {
 		i := strings.Index(s, "\n")
 		if i < 0 {
@@ -33,25 +43,59 @@ func readFileAndStrip(filename string) string {
 	return s
 }
 
-func absPath(f string) string {
-	if path.IsAbs(f) {
-		return path.Clean(f)
-	}
-	wd, err := os.Getwd()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return path.Join(wd, f)
-}
-
-func isHelpArg(s string) bool {
-	return s == "-h" || s == "-help" || s == "--help"
-}
-
 func errExit(msg string) {
 	fmt.Fprintf(os.Stderr, "%s\n", msg)
 	os.Exit(3)
+}
+
+func splitArgs(args []string) ([]string, string, []string) {
+	var gorun []string
+	var filename string
+	var program []string
+	for _, arg := range args {
+		if arg == "" {
+			continue
+		}
+		if filename == "" {
+			if len(arg) > 1 && arg[0] == '-' {
+				gorun = append(gorun, arg)
+			} else {
+				filename = arg
+			}
+		} else {
+			program = append(program, arg)
+		}
+	}
+	return gorun, filename, program
+}
+func showHelp() {
+	helpStr := `
+usage:
+    gorun [gorun options] <filename> [program options]  # first line can be #! /usr/bin/env gorun
+
+filename "-" for stdin
+	`
+	fmt.Printf("%s\n", strings.TrimSpace(helpStr))
+	fmt.Printf("\ngo compiler version %s\n", gocompiler.GoVersion())
+
+	c, errCache := cache.DefaultConfig()
+
+	if errCache == nil {
+		err := c.DeleteExpiredItems()
+		if err != nil {
+			fmt.Printf("cache trim error: %s\n", err)
+		}
+		info, err := c.GetInfo()
+		if err == nil {
+			fmt.Printf("cache size is %d MB for %d items in %s\n", info.SizeBytes/1e6, info.Count, info.Dir)
+		} else {
+			fmt.Printf("cache stat error : %s\n", err)
+		}
+	} else {
+		fmt.Printf("cache init failed: %s\n", errCache)
+		os.Exit(4)
+	}
+	fmt.Println()
 }
 
 func main() {
@@ -63,79 +107,60 @@ func main() {
 		return
 	}
 
-	args := os.Args[1:]
+	args, filename, programArgs := splitArgs(os.Args[1:])
 
-	if len(args) == 0 || len(args) == 1 && isHelpArg(args[0]) {
-		helpStr := `
-usage:
-  gorun <single-file-go-code>  # first line can be #! /usr/bin/env gorun
-`
-		fmt.Printf("%s\n", strings.TrimSpace(helpStr))
-		fmt.Printf("\ngo compiler version %s\n", gocompiler.GoVersion())
-
-		c, errCache := cache.DefaultConfig()
-
-		if errCache == nil {
-			err := c.DeleteExpiredItems() //  c.DeleteOld(0)
-			if err != nil {
-				fmt.Printf("cache trim error: %s\n", err)
-			}
-			info, err := c.GetInfo()
-			if err == nil {
-				fmt.Printf("cache size is %d MB for %d items in %s\n", info.SizeBytes/1e6, info.Count, info.Dir)
+	showFlag := false
+	help := false
+	for len(args) > 0 {
+		a0 := args[0]
+		args = args[1:]
+		if strings.HasPrefix(a0, "-") {
+			if a0 == "-h" || a0 == "-help" || a0 == "--help" {
+				help = true
 			} else {
-				fmt.Printf("cache stat error : %s\n", err)
+				switch a0 {
+				case "-show":
+					// show code
+					showFlag = true
+				default:
+					errExit(fmt.Sprintf("unknown option %s", a0))
+				}
 			}
 		} else {
-			fmt.Printf("cache init failed: %s\n", errCache)
-			os.Exit(4)
+			errExit("program error")
+			break
 		}
-		fmt.Println()
-		if len(os.Args) == 1 {
-			os.Exit(3)
-		}
-		return
 	}
-	//cache.Loginit()
+
+	if filename == "" || help {
+		showHelp()
+		if help {
+			return
+		} else {
+			errExit("missing file to run")
+		}
+	}
+	var err error
+	if filename != "-" {
+		filename, err = filepath.Abs(filename)
+		if err != nil {
+			errExit(fmt.Sprintf("%s", err))
+		}
+	}
+	s := readFileAndStrip(filename)
+	//fmt.Printf("## s=%s\n", s)
+
 	c, err := cache.DefaultConfig()
 	if err != nil {
 		fmt.Printf("cache init failed: %s\n", err)
 		os.Exit(7)
 	}
-	showFlag := false
-	remain := make([]string, 0)
-	for len(args) > 0 {
-		a0 := args[0]
-		args = args[1:]
-		if strings.HasPrefix(a0, "-") {
-			switch a0 {
-			case "-show":
-				// show code
-				showFlag = true
-			default:
-				errExit(fmt.Sprintf("unknown option %s", a0))
-			}
-		} else {
-			remain = append(remain, a0)
-			remain = append(remain, args...)
-			break
-		}
-	}
-	args = remain
-	if len(args) == 0 {
-		errExit("missing file to run")
-	}
 
-	filename := absPath(args[0])
-
-	//var err error
-
-	s := readFileAndStrip(filename)
-	err = cache.RunString2(c, filename, s, args[1:], showFlag)
+	err = run.RunString2(c, filename, s, programArgs, showFlag)
 
 	if err != nil {
 		switch errX := err.(type) {
-		case *cache.CompileError:
+		case *run.CompileError:
 			fmt.Printf("ERROR: %s\n", errX.Err)
 			fmt.Printf("%s", errX.Stdout)
 			fmt.Printf("%s", errX.Stderr)

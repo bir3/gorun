@@ -1,4 +1,4 @@
-package cache
+package run
 
 import (
 	"bytes"
@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/bir3/gocompiler"
+	"github.com/bir3/gorun/cache"
 )
 
 type CompileError struct {
@@ -52,9 +53,9 @@ func writeFileAndCompile(srcfile string, exefile string, s string) error {
 	return nil
 }
 
-func buildexe(c *Config, srcpath, gofile string, modfile string, exefile string, s string) error {
-	goRunVersion := "x"                        // FIXME
-	hash := hashString(goRunVersion + "#" + s) // if options, need them here
+func buildexe(c *cache.Config, srcpath, gofile string, modfile string, exefile string, s string) error {
+	//goRunVersion := "x" // FIXME
+	hash := "xx" // hashString(goRunVersion + "#" + s) // if options, need them here
 
 	err := writeModfile(modfile, srcpath, hash) // if exit after this point, modfile will say executable may exist
 	if err != nil {
@@ -97,7 +98,7 @@ go 1.18
 	return err
 }
 
-func RunString2(c *Config, srcpath string, s string, args []string, showFlag bool) error {
+func RunString2(c *cache.Config, srcpath string, s string, args []string, showFlag bool) error {
 	// simple cache: only store one copy per unique filepath
 	srcpath = path.Clean(srcpath)
 

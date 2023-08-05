@@ -1,4 +1,4 @@
-// Copyright 2022 Bergur Ragnarsson
+// Copyright 2023 Bergur Ragnarsson
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -53,8 +54,8 @@ func ensureDir(dir string) {
 		os.Mkdir(dir, 0755)
 	}
 }
-func runArgs(exefile, code string, args []string) (string, error) {
-	s, err := run(exefile, code, args, "")
+func runArgs(t *testing.T, exefile, code string, args []string) (string, error) {
+	s, err := gorun(t, exefile, code, args, "")
 	return s, err
 }
 
@@ -64,7 +65,14 @@ func runArgs(exefile, code string, args []string) (string, error) {
 		return s, err
 	}
 */
-func run(exefile string, code string, args []string, extraEnv string) (string, error) {
+func gorun(t *testing.T, gofilename string, code string, args []string, extraEnv string) (string, error) {
+	// exefile is actually .go file with #! /usr/bin/env gorun
+	dx := filepath.Dir(gofilename)
+	if dx != "" && dx != "." {
+		panic(fmt.Sprintf("bad gofilename: %s - dir = %s", gofilename, dx))
+	}
+	exefile := filepath.Join(tmpdir(t), gofilename)
+
 	err := os.WriteFile(exefile, []byte(code), 0755)
 	if err != nil {
 		return "", err
@@ -95,6 +103,7 @@ func run(exefile string, code string, args []string, extraEnv string) (string, e
 }
 
 func TestMain(m *testing.M) {
+
 	// https://pkg.go.dev/testing#hdr-Main
 	// = if present, only this function will run and m.Run() will run the tests
 	// call flag.Parse() here if TestMain uses flags
@@ -107,8 +116,19 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func tmpdir(t *testing.T) string {
+
+	d := os.Getenv("GORUN_TESTDIR")
+	if d != "" {
+		ensureDir(d)
+		return d
+	}
+	return t.TempDir()
+}
+
 func TestCompileError(t *testing.T) {
-	s, err := run("tmp/compile-error", goCompileError, []string{}, "")
+	t.Parallel()
+	s, err := gorun(t, "compile-error", goCompileError, []string{}, "")
 
 	if err == nil {
 		t.Error("expected compile error")
@@ -122,7 +142,8 @@ func TestCompileError(t *testing.T) {
 }
 
 func TestCmdlineArgs(t *testing.T) {
-	s, err := run("tmp/cmdline-args", goCmdlineArgs, []string{"900"}, "A=700")
+	t.Parallel()
+	s, err := gorun(t, "cmdline-args", goCmdlineArgs, []string{"900"}, "A=700")
 	if err != nil {
 		t.Errorf("exe failed - %s", err)
 		return
@@ -278,7 +299,7 @@ type updateMsg struct {
 }
 
 func runUpdate(t *testing.T, ch chan updateMsg, color string, args []string) error {
-	s, err := runArgs("tmp/update", strings.ReplaceAll(goUpdateString(), "colorX", color), args)
+	s, err := runArgs(t, "update", strings.ReplaceAll(goUpdateString(), "colorX", color), args)
 	if err != nil {
 		fmt.Printf("runUpdate: ERROR; %v - %s\n", err, s)
 		ch <- updateMsg{s, err}
@@ -289,6 +310,7 @@ func runUpdate(t *testing.T, ch chan updateMsg, color string, args []string) err
 }
 
 func TestUpdateWhileRunning(t *testing.T) {
+	t.Parallel()
 	rand.Seed(time.Now().UnixNano())
 	uid := fmt.Sprintf("%d", rand.Intn(100_000_000))
 	//fmt.Printf("uid %s\n", uid)
