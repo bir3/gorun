@@ -28,23 +28,38 @@ func (c *CompileError) Error() string {
 
 func compile(srcfile string, exefile string, s string) error {
 
-	cmd, err := gocompiler.Command(os.Environ(), "go", "build", "main.go")
-	if err != nil {
-		return fmt.Errorf("failed to create exec.Cmd object - %w", err)
+	run := func(args []string) error {
+		cmd, err := gocompiler.Command(os.Environ(), args...)
+		if err != nil {
+			return fmt.Errorf("failed to create exec.Cmd object - %w", err)
+		}
+		cmd.Dir = filepath.Dir(exefile)
+
+		//cmd.Env = append(cmd.Env, fmt.Sprintf("GOMODCACHE=%s/go-mod", cmd.Dir))
+		//cmd.Env = append(cmd.Env, fmt.Sprintf("GOCACHE=%s/go-build", cmd.Dir))
+		var out bytes.Buffer
+		var outerr bytes.Buffer
+
+		cmd.Stdout = &out
+		cmd.Stderr = &outerr
+		err = cmd.Run()
+
+		if err != nil {
+			return &CompileError{out.String(), outerr.String(), err}
+		}
+		return nil
 	}
-	cmd.Dir = filepath.Dir(exefile)
-	var out bytes.Buffer
-	var outerr bytes.Buffer
-
-	cmd.Stdout = &out
-	cmd.Stderr = &outerr
-	err = cmd.Run()
-
+	args := []string{"go", "get"}
+	err := run(args)
 	if err != nil {
-		return &CompileError{out.String(), outerr.String(), err}
+		return err
 	}
-
-	return nil
+	args = []string{"go", "build", "main.go"}
+	err = run(args)
+	if err != nil {
+		return err
+	}
+	return err
 }
 
 const goModString = `module main
@@ -56,6 +71,12 @@ go 1.18
 
 `
 
+func show(outdir string) {
+	exe, _ := os.Executable()
+	fmt.Printf("// cd %s\n", outdir)
+	fmt.Printf("// GOCOMPILER_TOOL=go %s build\n", exe)
+}
+
 func RunString2(c *cache.Config, srcpath string, s string, args []string, showFlag bool) error {
 	// simple cache: only store one copy per unique filepath
 	srcpath = path.Clean(srcpath)
@@ -65,9 +86,13 @@ func RunString2(c *cache.Config, srcpath string, s string, args []string, showFl
 	input := fmt.Sprintf("%s\n", s)
 
 	outdir, err := c.Lookup(input, func(outdir string) error {
+		if showFlag {
+			show(outdir)
+			showFlag = false
+		}
 		modfile := filepath.Join(outdir, "go.mod")
-		exefile := filepath.Join(outdir, "main")
 		gofile := filepath.Join(outdir, "main.go")
+		exefile := filepath.Join(outdir, "main")
 
 		hash := "xx" // hashString(goRunVersion + "#" + s) // if options, need them here
 
@@ -94,6 +119,11 @@ func RunString2(c *cache.Config, srcpath string, s string, args []string, showFl
 
 	if err != nil {
 		return err
+	}
+
+	if showFlag {
+		show(outdir)
+		showFlag = false
 	}
 
 	exefile := filepath.Join(outdir, "main")
