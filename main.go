@@ -16,6 +16,7 @@ import (
 
 	"github.com/bir3/gocompiler"
 	"github.com/bir3/gorun/cache"
+	"github.com/bir3/gorun/runstring"
 )
 
 func GorunVersion() string {
@@ -179,13 +180,14 @@ func main() {
 		os.Exit(7)
 	}
 
-	info := RunInfo{}
+	info := runstring.RunInfo{}
 	info.ShowFlag = showFlag
-	err = RunString(c, s, programArgs, info)
+	info.Input = fmt.Sprintf("// gorun: %s\n", GorunVersion())
+	err = runstring.RunString(c, s, programArgs, info)
 
 	if err != nil {
 		switch errX := err.(type) {
-		case *CompileError:
+		case *runstring.CompileError:
 			fmt.Printf("ERROR: %s\n", errX.Err)
 			fmt.Printf("%s", errX.Stdout)
 			fmt.Printf("%s", errX.Stderr)

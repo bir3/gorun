@@ -52,13 +52,6 @@ func ensureDir(dir string) {
 	}
 }
 
-/*
-	func run2(exefile, code string) (string, error) {
-		s, err := run(exefile, code, []string{}, "")
-		return s, err
-	}
-*/
-
 func gorun(t *testing.T, gofilename string, code string, args []string, extraEnv string) (string, error) {
 	// exefile is actually .go file with #! /usr/bin/env gorun
 	dx := filepath.Dir(gofilename)
@@ -110,7 +103,7 @@ func TestMain(m *testing.M) {
 		fmt.Printf("### go build failed: %s\ncwd=%s\n", s, wd)
 		os.Exit(9)
 	}
-	fmt.Printf("### TestMain: cwd=%s\n", wd)
+
 	ensureDir(tmpDir)
 
 	os.Exit(m.Run())
@@ -128,9 +121,9 @@ func tmpdir(t *testing.T) string {
 
 func TestCompileError(t *testing.T) {
 	//t.Parallel()
-	fmt.Println("## x0")
+
 	s, err := gorun(t, "compile-error", goCompileError, []string{}, "")
-	fmt.Println("## x100")
+
 	if err == nil {
 		t.Error("expected compile error")
 		return
@@ -159,10 +152,3 @@ func TestCmdlineArgs(t *testing.T) {
 		return
 	}
 }
-
-/*
-run 4 "blue" // wait 4 seconds and emit "blue"
-run 2 "red" // wait 2 seconds and emit "red"
-expect to get messages "red" and then "blue" in order
-=> the first run does not somehow block the second run
-*/
