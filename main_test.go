@@ -310,6 +310,7 @@ func runUpdate(t *testing.T, ch chan updateMsg, color string, args []string) err
 }
 
 func TestUpdateWhileRunning(t *testing.T) {
+	workdir := tmpdir(t)
 	t.Parallel()
 	rand.Seed(time.Now().UnixNano())
 	uid := fmt.Sprintf("%d", rand.Intn(100_000_000))
@@ -317,8 +318,8 @@ func TestUpdateWhileRunning(t *testing.T) {
 	ch := make(chan updateMsg, 10)
 
 	// use simple file-based messaging
-	blueFM := create("server", "tmp/blue")
-	redFM := create("server", "tmp/red")
+	blueFM := create("server", filepath.Join(workdir, "blue"))
+	redFM := create("server", filepath.Join(workdir, "red"))
 
 	go runUpdate(t, ch, "blue", []string{uid, blueFM.filename})
 	blueFM.wait("blue ready")
