@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/bir3/gocompiler"
+	"github.com/bir3/gorun"
 	"github.com/bir3/gorun/cache"
 )
 
@@ -74,8 +75,9 @@ func RunString(c *cache.Config, goCode string, args []string, info RunInfo) erro
 	// = input file, executables, env-vars, commandline
 	//
 	input := ""
-	input += fmt.Sprintf("// gorun: %s\n", info.GorunVersion)
-	input += fmt.Sprintf("// gocompiler: %s\n", info.GocompilerVersion)
+
+	input += fmt.Sprintf("// gorun: %s\n", gorun.GorunVersion())
+	input += fmt.Sprintf("// gocompiler: %s\n", gocompiler.GoVersion())
 	input += fmt.Sprintf("// env.CGO_ENABLED: %s\n", os.Getenv("CGO_ENABLED"))
 	input += "//\n"
 	input += fmt.Sprintf("%s\n", goCode)

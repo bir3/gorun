@@ -19,7 +19,7 @@ import (
 	"github.com/bir3/gorun/runstring"
 )
 
-func gorunVersion() string {
+func GorunVersion() string {
 	return "0.4"
 }
 
@@ -80,7 +80,7 @@ usage:
 filename "-" for stdin
 	`
 	fmt.Printf("%s\n\n", strings.TrimSpace(helpStr))
-	fmt.Printf("gorun version %s\n", gorunVersion())
+	fmt.Printf("gorun version %s\n", GorunVersion())
 	fmt.Printf("go compiler version %s\n", gocompiler.GoVersion())
 
 	c, errCache := cache.DefaultConfig()
@@ -162,7 +162,7 @@ func main() {
 	}
 
 	info := runstring.RunInfo{}
-	info.GorunVersion = gorunVersion()
+	info.GorunVersion = GorunVersion()
 	info.GocompilerVersion = gocompiler.GoVersion()
 	info.ShowFlag = showFlag
 	err = runstring.RunString(c, s, programArgs, info)
