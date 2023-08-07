@@ -1,4 +1,4 @@
-package run2
+package runstring
 
 import (
 	"os"
