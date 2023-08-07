@@ -12,8 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/bir3/gorun/runstring"
 )
 
 const tmpDir = "tmp"
@@ -60,10 +58,8 @@ func ensureDir(dir string) {
 		return s, err
 	}
 */
+
 func gorun(t *testing.T, gofilename string, code string, args []string, extraEnv string) (string, error) {
-	err := runstring.RunString(c, Code, args)
-}
-func xgorun(t *testing.T, gofilename string, code string, args []string, extraEnv string) (string, error) {
 	// exefile is actually .go file with #! /usr/bin/env gorun
 	dx := filepath.Dir(gofilename)
 	if dx != "" && dx != "." {
@@ -102,15 +98,21 @@ func xgorun(t *testing.T, gofilename string, code string, args []string, extraEn
 
 func TestMain(m *testing.M) {
 
+	wd, err := os.Getwd()
+	if err != nil {
+		os.Exit(8)
+	}
 	// https://pkg.go.dev/testing#hdr-Main
 	// = if present, only this function will run and m.Run() will run the tests
 	// call flag.Parse() here if TestMain uses flags
-	_, err := exec.Command("go", "build").CombinedOutput()
+	s, err := exec.Command("go", "build").CombinedOutput()
 	if err != nil {
-		fmt.Println("go build failed")
-		os.Exit(7)
+		fmt.Printf("### go build failed: %s\ncwd=%s\n", s, wd)
+		os.Exit(9)
 	}
+	fmt.Printf("### TestMain: cwd=%s\n", wd)
 	ensureDir(tmpDir)
+
 	os.Exit(m.Run())
 }
 
@@ -125,9 +127,10 @@ func tmpdir(t *testing.T) string {
 }
 
 func TestCompileError(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
+	fmt.Println("## x0")
 	s, err := gorun(t, "compile-error", goCompileError, []string{}, "")
-
+	fmt.Println("## x100")
 	if err == nil {
 		t.Error("expected compile error")
 		return
@@ -136,7 +139,7 @@ func TestCompileError(t *testing.T) {
 	if strings.Contains(s, `"fmt" imported and not used`) {
 		return // pass
 	}
-	t.Error("expected error message")
+	t.Errorf("expected error message, got=%s", s)
 }
 
 func TestCmdlineArgs(t *testing.T) {

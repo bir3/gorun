@@ -16,7 +16,6 @@ import (
 
 	"github.com/bir3/gocompiler"
 	"github.com/bir3/gorun/cache"
-	"github.com/bir3/gorun/runstring"
 )
 
 func GorunVersion() string {
@@ -72,17 +71,28 @@ func splitArgs(args []string) ([]string, string, []string) {
 	}
 	return gorun, filename, program
 }
-func showHelp() {
+func showHelp(help bool) {
 	helpStr := `
 usage:
-    gorun [gorun options] <filename> [program options]  # first line can be #! /usr/bin/env gorun
+  gorun [gorun options] <filename> [program options]
 
-filename "-" for stdin
+`
+	if !help {
+		helpStr += "  -h for help"
+	} else {
+		helpStr += `  -h for help
+  -show show cache location`
+	}
+	helpStr += `
+  filename or "-" for stdin; first line can be #! /usr/bin/env gorun
+
 	`
-	fmt.Printf("%s\n\n", strings.TrimSpace(helpStr))
-	fmt.Printf("gorun version %s\n", GorunVersion())
-	fmt.Printf("go compiler version %s\n", gocompiler.GoVersion())
-
+	fmt.Printf("%s\n", strings.TrimSpace(helpStr))
+	if help {
+		fmt.Println()
+		fmt.Printf("gorun version %s\n", GorunVersion())
+		fmt.Printf("go compiler version %s\n", gocompiler.GoVersion())
+	}
 	c, errCache := cache.DefaultConfig()
 
 	if errCache == nil {
@@ -92,7 +102,9 @@ filename "-" for stdin
 		}
 		info, err := c.GetInfo()
 		if err == nil {
-			fmt.Printf("cache size is %d MB for %d items in %s\n", info.SizeBytes/1e6, info.Count, info.Dir)
+			if help {
+				fmt.Printf("cache size is %d MB for %d items in %s\n", info.SizeBytes/1e6, info.Count, info.Dir)
+			}
 		} else {
 			fmt.Printf("cache stat error : %s\n", err)
 		}
@@ -115,6 +127,7 @@ func main() {
 	args, filename, programArgs := splitArgs(os.Args[1:])
 
 	showFlag := false
+
 	help := false
 	for len(args) > 0 {
 		a0 := args[0]
@@ -127,6 +140,7 @@ func main() {
 				case "-show":
 					// show code
 					showFlag = true
+
 				default:
 					errExit(fmt.Sprintf("unknown option %s", a0))
 				}
@@ -137,8 +151,12 @@ func main() {
 		}
 	}
 
+	if filename == "help" {
+		help = true
+	}
+
 	if filename == "" || help {
-		showHelp()
+		showHelp(help)
 		if help {
 			return
 		} else {
@@ -161,15 +179,13 @@ func main() {
 		os.Exit(7)
 	}
 
-	info := runstring.RunInfo{}
-	info.GorunVersion = GorunVersion()
-	info.GocompilerVersion = gocompiler.GoVersion()
+	info := RunInfo{}
 	info.ShowFlag = showFlag
-	err = runstring.RunString(c, s, programArgs, info)
+	err = RunString(c, s, programArgs, info)
 
 	if err != nil {
 		switch errX := err.(type) {
-		case *runstring.CompileError:
+		case *CompileError:
 			fmt.Printf("ERROR: %s\n", errX.Err)
 			fmt.Printf("%s", errX.Stdout)
 			fmt.Printf("%s", errX.Stderr)

@@ -1,4 +1,4 @@
-package runstring
+package main
 
 import (
 	"bytes"
@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/bir3/gocompiler"
-	"github.com/bir3/gorun"
 	"github.com/bir3/gorun/cache"
 )
 
@@ -37,15 +36,19 @@ func compile(c *cache.Config, srcfile string, exefile string) error {
 		var out, outerr bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &out, &outerr
 
+		fmt.Println("# a110", err, cmd)
 		err = cmd.Run()
-
+		fmt.Println("# a120", err)
 		if err != nil {
 			return &CompileError{out.String(), outerr.String(), err}
 		}
 		return nil
 	}
 	var err error
+	fmt.Println("# a100", err)
 	err = runIf(err, []string{"go", "mod", "init", "main"})
+	fmt.Println("# a200", err)
+
 	err = runIf(err, []string{"go", "get"})
 	err = runIf(err, []string{"go", "build", "main.go"})
 	return err
@@ -64,9 +67,7 @@ func show(outdir string, inputPart string) {
 }
 
 type RunInfo struct {
-	GorunVersion      string
-	GocompilerVersion string
-	ShowFlag          bool
+	ShowFlag bool
 }
 
 func RunString(c *cache.Config, goCode string, args []string, info RunInfo) error {
@@ -76,7 +77,7 @@ func RunString(c *cache.Config, goCode string, args []string, info RunInfo) erro
 	//
 	input := ""
 
-	input += fmt.Sprintf("// gorun: %s\n", gorun.GorunVersion())
+	input += fmt.Sprintf("// gorun: %s\n", GorunVersion())
 	input += fmt.Sprintf("// gocompiler: %s\n", gocompiler.GoVersion())
 	input += fmt.Sprintf("// env.CGO_ENABLED: %s\n", os.Getenv("CGO_ENABLED"))
 	input += "//\n"
@@ -89,8 +90,9 @@ func RunString(c *cache.Config, goCode string, args []string, info RunInfo) erro
 			showDone = false
 		}
 	}
+	fmt.Println("## x10")
 	outdir, err := c.Lookup(input, func(outdir string) error {
-
+		fmt.Println("## x20")
 		create := func() error {
 			gofile := filepath.Join(outdir, "main.go")
 			exefile := filepath.Join(outdir, "main")
@@ -100,8 +102,9 @@ func RunString(c *cache.Config, goCode string, args []string, info RunInfo) erro
 			if err != nil {
 				return fmt.Errorf("failed to write %s - %w", gofile, err)
 			}
+			fmt.Println("## x40")
 			err = compile(c, gofile, exefile)
-
+			fmt.Println("## x50")
 			return err
 		}
 		err := create()
