@@ -33,10 +33,6 @@ func compile(c *cache.Config, srcfile string, exefile string) error {
 		}
 		cmd.Dir = filepath.Dir(exefile)
 
-		// make sure we won't taint the default Go cache
-		gocache := filepath.Join(c.Dir(), "go-build")
-		cmd.Env = append(cmd.Env, fmt.Sprintf("GOCACHE=%s", gocache))
-
 		var out, outerr bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &out, &outerr
 
