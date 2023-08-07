@@ -13,5 +13,5 @@ func sysExec(exefile string, args []string) error {
 	if err != nil {
 		return fmt.Errorf("syscall.Exec failed for %s - %w", exefile, err)
 	}
-	return nil // unreachable - exec should not return
+	return nil // unreachable ! (exec should not return on success)
 }

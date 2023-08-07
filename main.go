@@ -161,7 +161,11 @@ func main() {
 		os.Exit(7)
 	}
 
-	err = run2.RunString2(c, filename, s, programArgs, showFlag)
+	info := run2.RunInfo{}
+	info.GorunVersion = gorunVersion()
+	info.GocompilerVersion = gocompiler.GoVersion()
+	info.ShowFlag = showFlag
+	err = run2.RunString(c, s, programArgs, info)
 
 	if err != nil {
 		switch errX := err.(type) {

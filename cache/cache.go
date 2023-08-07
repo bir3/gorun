@@ -165,6 +165,9 @@ func (config *Config) GetPartInfo(stat *Stat, part int) {
 	}
 }
 
+func (config *Config) Dir() string {
+	return config.dir
+}
 func (config *Config) DeleteExpiredItems() error {
 	var err error
 	for k := 0; k < 256; k++ {
