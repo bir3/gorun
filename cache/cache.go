@@ -1,23 +1,22 @@
 package cache
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"math/rand"
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 )
-
-// examples:
-// - if key always = "0" => the cache will only cache one item
-// - if key only "1", "2", .. "10" => cache will keep 10 items
-// and so on
 
 // requirements:
 //   - graceful failure: if locks are no-op, cache should still work mostly ok
@@ -26,45 +25,109 @@ import (
 //   - if user creates symlinks in cache dir, delete should only delete symlinks
 //   - if two or more P race to the same key and one process has started to create entry
 //     but fails before completion, another P will take over the task and complete it
-//   - out-of-disk space will no corrupt the cache, only fail it
+//   - out-of-disk space will not corrupt the cache, only fail it
 //		=> need validation of entry data, e.g. guard against truncation
 
 // bonus:
 //   - create primitive which guarantees one P will execute task, even though
-//  	many run at the same time
+//  	many run at the same time and some will fail halfway during task
 //		= same as a cache like this, but can we make it simpler ?
-
-type LookupResult int
-
-const (
-	FOUND LookupResult = 16
-	NEW   LookupResult = 17
-	ERROR LookupResult = 99
-)
 
 type Config struct {
 	dir string // no trailing slashes
 
-	maxAge time.Duration // safe to delete objects older than this
-	/*
-		refreshAge      time.Duration  // reset age of objects older than this
-		lookupUntilRead time.Duration  // after release of lock, for how long is object guarantee to exist
-		reHash          *regexp.Regexp // validate hashstring
-
-		testTime    *time.Time
-		testLog     string
-		testDelayMs map[string]int
-	*/
+	maxAge    time.Duration // safe to delete objects older than this
+	re1       *regexp.Regexp
+	re2       *regexp.Regexp
+	lockfiles []string // only used for delete
+}
+type Lockpair struct {
+	lockfile string
+	datafile string
 }
 
-/*
-func (config *Config) now() time.Time {
-	if config.testTime != nil {
-		return *config.testTime
+func (config *Config) Dir() string {
+	return config.dir
+}
+func (config *Config) global() Lockpair {
+	return Lockpair{path.Join(config.dir, "global.lock"), path.Join(config.dir, "config.json")}
+}
+
+func NewConfig(dir string, maxAge time.Duration) (*Config, error) {
+
+	if maxAge < 10*time.Second {
+		return nil, fmt.Errorf("maxAge minimum is 10 seconds")
 	}
-	return time.Now()
+
+	if !utf8.Valid([]byte(dir)) {
+		return nil, fmt.Errorf("config dir is not utf8: %q", dir)
+	}
+	dir = path.Clean(dir) // only ends in trailing slash if root /
+	if !path.IsAbs(dir) || strings.Contains(dir, "\x00") {
+		return nil, fmt.Errorf("bad characters in config dir : %q", dir)
+	}
+
+	config := &Config{dir, maxAge, regexp.MustCompile(`^[a-z0-9]{2}-t$`), regexp.MustCompile(`^[a-z0-9]{40}$`), []string{}}
+
+	mkdirAllRace(dir)
+
+	//lockfile, datafile := config.global()
+	//lockfile, datafile := config.global()
+	m := make(map[string]string)
+
+	updateContent := func(old string, writeString func(new string) error) error {
+		m["maxAge"] = maxAge.String()
+		m["#info-maxAge"] = "valid units are h, m and s"
+
+		final, err := jsonString(m)
+		if err != nil {
+			return err
+		}
+
+		//fmt.Println("# updateContent", old, final)
+		if old == "" { // = no existing file
+			prefix := filepath.Join(dir, "data")
+			err := ensureDir(prefix)
+			if err != nil {
+				return err
+			}
+			// create subdirs
+			for i := 0; i < 256; i++ {
+				name := filepath.Join(dir, "data", fmt.Sprintf("%02x-t", i))
+				err := ensureDir(name)
+				if err != nil {
+					return err
+				}
+			}
+
+			return writeString(final)
+		} else {
+			// ignore maxAge - use existing config.json
+			err = json.Unmarshal([]byte(old), &m)
+			if err != nil {
+				return err
+			}
+			maxAge, err = time.ParseDuration(m["maxAge"])
+			if err != nil {
+				return err
+			}
+			if maxAge < time.Second*10 {
+				return fmt.Errorf("maxAge too short: %s", maxAge)
+			}
+			config.maxAge = maxAge
+		}
+
+		return nil
+	}
+
+	g := config.global()
+	err := UpdateMultiprocess(g.lockfile, g.datafile, updateContent)
+	if err != nil {
+		return nil, err
+	}
+
+	return config, nil
 }
-*/
 
 func DefaultConfig() (*Config, error) {
 	maxAge := 10 * 24 * time.Hour
@@ -77,58 +140,18 @@ func DefaultConfig() (*Config, error) {
 	return NewConfig(dir, maxAge)
 }
 
-func NewConfig(dir string, maxAge time.Duration) (*Config, error) {
-	// maxAge  refresh    grace
-	// 5 days     12 h     1 h
-	// 10 min      1 min   1 min
-	if maxAge < 10*time.Second {
-		return nil, fmt.Errorf("maxAge minimum is 10 seconds")
+func jsonString(m map[string]string) (string, error) {
+
+	buf, err := json.Marshal(m)
+	var out bytes.Buffer
+	if err == nil {
+		err = json.Indent(&out, buf, "", "  ")
 	}
-	/*
-		refreshAge := maxAge / 10
-		lookupGraceDuration := maxAge / 10
-		if lookupGraceDuration > 1*time.Hour {
-			lookupGraceDuration = 1 * time.Hour
-		}
-	*/
-	//id := ""
-	if !utf8.Valid([]byte(dir)) {
-		return nil, fmt.Errorf("config dir is not utf8: %q", dir)
-	}
-	dir = path.Clean(dir) // only ends in trailing slash if root /
-	if !path.IsAbs(dir) || strings.Contains(dir, "\x00") {
-		return nil, fmt.Errorf("bad characters in config dir : %q", dir)
-	}
-
-	mkdirAllRace(dir) // review !
-
-	lockfile := path.Join(dir, "global.flock")
-	datafile := path.Join(dir, "config")
-
-	updateContent := func(old string, writeString func(new string) error) error {
-		final := "done"
-		//fmt.Println("# updateContent", old, final)
-		if old != final {
-			// create subdirs
-			for i := 0; i < 256; i++ {
-				name := filepath.Join(dir, fmt.Sprintf("%02x", i))
-				err := os.Mkdir(name, 0777)
-				if err != nil {
-					return err
-				}
-			}
-
-			return writeString(final)
-		}
-
-		return nil
-	}
-
-	err := UpdateMultiprocess(lockfile, datafile, updateContent)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	return &Config{dir, maxAge}, nil
+	final := out.String() + "\n"
+	return final, nil
 }
 
 type Stat struct {
@@ -147,8 +170,8 @@ func (config *Config) GetInfo() (Stat, error) {
 }
 
 func (config *Config) GetPartInfo(stat *Stat, part int) {
-	hs2 := fmt.Sprintf("%02x", part)
-	dir := path.Join(config.dir, hs2)
+	hs2 := fmt.Sprintf("%02x-t", part)
+	dir := path.Join(config.dir, "data", hs2)
 
 	e := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err == nil && !d.IsDir() { //&& d.Name() == "main" {
@@ -165,18 +188,63 @@ func (config *Config) GetPartInfo(stat *Stat, part int) {
 	}
 }
 
-func (config *Config) Dir() string {
-	return config.dir
-}
-func (config *Config) DeleteExpiredItems() error {
-	var err error
-	for k := 0; k < 256; k++ {
-		err2 := config.DeleteExpiredPart(k)
-		if err2 != nil {
-			err = err2
-		}
+func (config *Config) safeRemoveAll2(datafile, objdir string) error {
+	err := os.Remove(datafile)
+	if err == nil || errors.Is(err, os.ErrNotExist) {
+		return config.safeRemoveAll(objdir)
 	}
 	return err
+}
+
+func (config *Config) safeRemoveAll(objdir string) error {
+	// allow delete of folders named
+	//   xx-t/xx40/xx8
+	//   xx-t/xx40
+	// where x = [0-9a-f]
+	d1, d2 := "", ""
+	if len(filepath.Base(objdir)) == 8 {
+		d2 = filepath.Dir(objdir)
+	} else {
+		d2 = objdir
+	}
+	d1 = filepath.Dir(d2)
+	if !config.re1.MatchString(filepath.Base(d1)) ||
+		!config.re2.MatchString(filepath.Base(d2)) {
+		panic(fmt.Errorf("removeAll: bad objdir %s", objdir)) // debug
+		return fmt.Errorf("removeAll: bad objdir %s", objdir)
+	}
+	return os.RemoveAll(objdir)
+}
+
+func (config *Config) DeleteExpiredItems() error {
+	// part 1 : cache can operate while we delete since we
+	//          use fine-grained per-item locks
+	var saveError error
+
+	Lockedfile(config.global().lockfile, SharedLock, func() error {
+		config.lockfiles = []string{}
+		for k := 0; k < 256; k++ {
+			err2 := config.DeleteExpiredPart(k)
+			if err2 != nil {
+				saveError = err2
+			}
+		}
+		return nil
+	})
+	// slow delete above completed, the only thing remaining are
+	// expired lockfiles and their enclosing folder
+
+	// part 2 : block all cache operations until this part complete
+	//          hold global lock on whole cache folder
+	Lockedfile(config.global().lockfile, ExclusiveLock, func() error {
+		for _, lockfile := range config.lockfiles {
+			config.safeRemoveAll(filepath.Dir(lockfile))
+		}
+		config.lockfiles = []string{}
+		return nil
+	})
+
+	return saveError
 }
 
 func (config *Config) DeleteExpiredPart(part int) error {
@@ -184,40 +252,70 @@ func (config *Config) DeleteExpiredPart(part int) error {
 		part = 0
 	}
 	part = part % 256
-	hs2 := fmt.Sprintf("%02x", part)
-	glob := path.Join(config.dir, hs2, "*.lock")
-	//fmt.Println("# del", glob)
+	hs2 := fmt.Sprintf("%02x-t", part)
+	glob := path.Join(config.dir, "data", hs2, "*", "lock")
+
 	flist, err := filepath.Glob(glob)
 	if err != nil {
 		return fmt.Errorf("glob failed - %w", err)
 	}
-	for _, lockfile := range flist {
-		//fmt.Printf("delete scan %s\n", lockfile)
-		datafile := lockfile[0:len(lockfile)-5] + ".info"
-		Lockedfile(lockfile, ExclusiveLock, func() error {
-			buf, err := os.ReadFile(datafile)
-			if err == nil {
-				obj, err := str2item(string(buf))
-				if err == nil {
-					// delete items older than maxAge
-					age := obj.age()
-					if age > config.maxAge {
-						//fmt.Printf("*** expired item found, age=%s\n", age)
-						//fmt.Printf("*** dir=%s\n", obj.objdir)
 
-						// TODO: clean up all folders inside given hash
-						// in case partial create leftovers there
-						os.RemoveAll(obj.objdir)
+	var saveError error
+	for _, lockfile := range flist {
+
+		datafile := path.Join(path.Dir(lockfile), "info")
+		err = Lockedfile(lockfile, ExclusiveLock, func() error {
+			buf, err := os.ReadFile(datafile)
+			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					config.lockfiles = append(config.lockfiles, lockfile)
+					return nil
+				}
+				return err
+			}
+
+			obj, err := str2item(string(buf))
+			if err != nil {
+				// unknown format => avoid deletion
+				return err
+			}
+
+			// delete items older than maxAge
+			age := obj.age()
+
+			if age > config.maxAge {
+				// important to first delete datafile
+				// (should exist since we just read it)
+				err = os.Remove(datafile)
+				if err != nil {
+					return err
+				}
+
+				// clean up all folders inside given hash
+				// in case partial create leftovers there
+				dir := filepath.Dir(obj.objdir)
+				elist, err := os.ReadDir(dir)
+				if err != nil {
+					return err
+				}
+
+				for _, e := range elist {
+					if e.IsDir() {
+						objdir2 := filepath.Join(dir, e.Name())
+						config.safeRemoveAll(objdir2)
 					}
 				}
 
-				// is expired ?
-
+				config.lockfiles = append(config.lockfiles, lockfile)
 			}
+
 			return nil
 		})
+		if err != nil {
+			saveError = fmt.Errorf("error during delete of %s : %s", lockfile, err)
+		}
 	}
-	return nil
+	return saveError
 }
 
 //const tsFormat = "2006-01-02T15:04:05.999Z07:00"
@@ -294,16 +392,19 @@ func (config *Config) Lookup(input string, create func(outDir string) error) (st
 	const useCache = true
 	return config.Lookup2(input, create, useCache)
 }
+func (config *Config) prefix() string {
+	return path.Join(config.dir, "data")
+}
 
-func (config *Config) Lookup2(input string, create func(outDir string) error, useCache bool) (string, error) {
+func (config *Config) Lookup2(input string, userCreate func(outDir string) error, useCache bool) (string, error) {
 	hs := hashString(input)
-	prefix := path.Join(config.dir, hs[0:2], hs)
-	err := ensureDir2(prefix)
+	prefix := path.Join(config.prefix(), hs[0:2]+"-t", hs[0:40]) // use 160 bits
+	err := ensureDir(prefix)
 	if err != nil {
-		return "/invalid/outdir-1", fmt.Errorf("failed to create prefix dir %q - %w", prefix, err)
+		return "/invalid/outdir/1", fmt.Errorf("failed to create prefix dir %q - %w", prefix, err)
 	}
-	lockfile := prefix + ".lock"
-	datafile := prefix + ".info"
+	lockfile := path.Join(prefix, "lock")
+	datafile := path.Join(prefix, "info")
 
 	outdir := path.Join(prefix, randomHash()[0:8]) // 8 chars = 32 bits
 	updateContent := func(old string, writeString func(new string) error) error {
@@ -314,8 +415,9 @@ func (config *Config) Lookup2(input string, create func(outDir string) error, us
 			if err != nil {
 				return fmt.Errorf("outdir %q already exists - program error", outdir)
 			}
-			err = create(outdir)
+			err = userCreate(outdir)
 			if err != nil {
+				config.safeRemoveAll2(datafile, outdir)
 				return err
 			}
 			var obj Item
@@ -323,6 +425,7 @@ func (config *Config) Lookup2(input string, create func(outDir string) error, us
 			obj.refresh()
 			err = writeString(item2str(obj))
 			if err != nil {
+				config.safeRemoveAll2(datafile, outdir)
 				return err
 			}
 			return nil
@@ -340,89 +443,69 @@ func (config *Config) Lookup2(input string, create func(outDir string) error, us
 			}
 			err = writeString(item2str(obj))
 			if err != nil {
+				config.safeRemoveAll2(datafile, outdir)
 				return fmt.Errorf("cache refresh failed for file %q - %w", datafile, err)
 			}
 
 		}
 		return nil
 	}
-	err = UpdateMultiprocess(lockfile, datafile, updateContent)
+
+	withGlobalLock := func() error {
+		return UpdateMultiprocess(lockfile, datafile, updateContent)
+	}
+	err = Lockedfile(config.global().lockfile, SharedLock, withGlobalLock)
 	if err != nil {
-		return "/invalid/outdir", err
+		return "/invalid/outdir/2", err
 	}
 	return outdir, nil
 }
 
-/*
-func (config *Config) log(msg string) {
-	if config.testLog != "" {
-		fmt.Printf("%s\n", msg)
-	}
-}
-
-func (config *Config) log2(msg string) {
-	if config.testLog != "" {
-		fmt.Printf("%d : %s\n", time.Now().UnixMilli()%1000, msg)
-	}
-}
-
-func (config *Config) testDelay(key string) {
-	if config.testDelayMs != nil {
-		if config.testDelayMs[key] > 0 {
-			n := config.testDelayMs[key]
-			config.log(fmt.Sprintf("testDelay %s : %d ms", key, n))
-			time.Sleep(time.Millisecond * time.Duration(n))
-		} else {
-			// fmt.Printf("id %s : warning unknown testDelay %s\n", config.testLog, key)
-		}
-	}
-}
-
-func timeDiff(t1 time.Time, t2 time.Time) time.Duration {
-	if t1.After(t2) {
-		return t1.Sub(t2)
-	} else {
-		return t2.Sub(t1)
-	}
-}
-*/
-
 func mkdirAllRace(dir string) error {
+	// safe for many processes to run concurrently
 	if !path.IsAbs(dir) {
-		panic(fmt.Sprintf("program error: dir %s not abs", dir))
+		return fmt.Errorf("program error: folder is not absolute path: %s", dir)
 	}
-	missing := findDir(dir, []string{})
-
-	for i := len(missing) - 1; i >= 0; i-- {
-		os.Mkdir(missing[i], 0777) // ignore error as we may race
+	missing, err := missingFolders(dir, []string{})
+	if err != nil {
+		return err
+	}
+	for _, d2 := range missing {
+		os.Mkdir(d2, 0777) // ignore error as we may race
 	}
 
 	// at the end, we want a folder to exist
 	// - no matter who created it:
-	info, err := os.Stat(dir)
+	missing, err = missingFolders(dir, []string{})
 	if err != nil {
 		return fmt.Errorf("failed to create folder %s - %w", dir, err)
 	}
-	if info.IsDir() {
-		return nil
+	if len(missing) > 0 {
+		return fmt.Errorf("failed to create folder %s", dir)
 	}
-	return fmt.Errorf("failed to create folder %s - unexpected filetype", dir)
+	return nil
 }
 
-func findDir(dir string, missing []string) []string {
-	info, err := os.Stat(dir)
-	if err == nil && info.IsDir() {
-		return missing
+func missingFolders(dir string, missing []string) ([]string, error) {
+	for {
+		info, err := os.Stat(dir)
+		if err == nil {
+			if info.IsDir() {
+				return missing, nil
+			}
+			return []string{}, fmt.Errorf("not a folder: %s", dir)
+		}
+		missing = append(missing, dir)
+		d2 := path.Dir(dir)
+		if d2 == dir {
+			break
+		}
+		dir = d2
 	}
-	d2 := path.Dir(dir)
-	missing = append(missing, dir)
-	if d2 != dir {
-		return findDir(d2, missing)
-	}
-	return missing
+	return []string{}, fmt.Errorf("program error at folder: %s", dir)
 }
 
-func ensureDir2(dir string) error {
+func ensureDir(dir string) error {
 	fileinfo, err := os.Stat(dir)
 	if err == nil && fileinfo.IsDir() {
 		return nil

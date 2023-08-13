@@ -11,6 +11,10 @@ func sysExec(exefile string, args []string) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	err := cmd.Run()
-	return err
+	// try to simulate exec on windows...
+	if err != nil {
+		os.Exit(1)
+	}
+	os.Exit(0)
 
 }

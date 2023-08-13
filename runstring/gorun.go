@@ -69,7 +69,7 @@ type RunInfo struct {
 	ShowFlag bool
 }
 
-func RunString(c *cache.Config, goCode string, args []string, info RunInfo) error {
+func ExecString(c *cache.Config, goCode string, args []string, info RunInfo) error {
 
 	// must add everything that affects the computation:
 	// = input file, executables, env-vars, commandline

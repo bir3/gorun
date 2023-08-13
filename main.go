@@ -183,7 +183,7 @@ func main() {
 	info := runstring.RunInfo{}
 	info.ShowFlag = showFlag
 	info.Input = fmt.Sprintf("// gorun: %s\n", GorunVersion())
-	err = runstring.RunString(c, s, programArgs, info)
+	err = runstring.ExecString(c, s, programArgs, info)
 
 	if err != nil {
 		switch errX := err.(type) {

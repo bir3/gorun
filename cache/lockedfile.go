@@ -118,8 +118,6 @@ func Lockedfile(lockfile string, lockType LockType, f func() error) error {
 		file.Close()
 		return fmt.Errorf("failed to lock file %s - %w", lockfile, err)
 	}
-	//log.SetFlags(log.LstdFlags | log.Lmicroseconds)
-	//log.Printf("holding lock on file %s\n", lockfile)
 	errorOut := f()
 
 	errUnlock := filelock.Unlock(file)
@@ -128,7 +126,7 @@ func Lockedfile(lockfile string, lockType LockType, f func() error) error {
 	if errorOut == nil && errUnlock != nil {
 		errorOut = fmt.Errorf("unlock failed: %w", errUnlock)
 	}
-	//log.Printf("released lock on file %s\n", lockfile)
+
 	if errorOut == nil && errClose != nil {
 		errorOut = fmt.Errorf("close failed: %w", errClose)
 	}
