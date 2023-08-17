@@ -36,10 +36,9 @@ import (
 type Config struct {
 	dir string // no trailing slashes
 
-	maxAge    time.Duration // safe to delete objects older than this
-	re1       *regexp.Regexp
-	re2       *regexp.Regexp
-	lockfiles []string // only used for delete
+	maxAge time.Duration // safe to delete objects older than this
+	re1    *regexp.Regexp
+	re2    *regexp.Regexp
 }
 type Lockpair struct {
 	lockfile string
@@ -67,7 +66,7 @@ func NewConfig(dir string, maxAge time.Duration) (*Config, error) {
 		return nil, fmt.Errorf("bad characters in config dir : %q", dir)
 	}
 
-	config := &Config{dir, maxAge, regexp.MustCompile(`^[a-z0-9]{2}-t$`), regexp.MustCompile(`^[a-z0-9]{40}$`), []string{}}
+	config := &Config{dir, maxAge, regexp.MustCompile(`^[a-z0-9]{2}-t$`), regexp.MustCompile(`^[a-z0-9]{40}$`)}
 
 	mkdirAllRace(dir)
 
@@ -221,8 +220,10 @@ func (config *Config) DeleteExpiredItems() error {
 	//          use fine-grained per-item locks
 	var saveError error
 
-	Lockedfile(config.global().lockfile, SharedLock, func() error {
-		config.lockfiles = []string{}
+	// simplify cache cleaup by hold exclusive lock while we look
+	// for expired items
+	Lockedfile(config.global().lockfile, ExclusiveLock, func() error {
+
 		for k := 0; k < 256; k++ {
 			err2 := config.DeleteExpiredPart(k)
 			if err2 != nil {
@@ -231,23 +232,17 @@ func (config *Config) DeleteExpiredItems() error {
 		}
 		return nil
 	})
-	// slow delete above completed, the only thing remaining are
-	// expired lockfiles and their enclosing folder
-
-	// part 2 : block all cache operations until this part complete
-	//          hold global lock on whole cache folder
-	Lockedfile(config.global().lockfile, ExclusiveLock, func() error {
-		for _, lockfile := range config.lockfiles {
-			config.safeRemoveAll(filepath.Dir(lockfile))
-		}
-		config.lockfiles = []string{}
-		return nil
-	})
 
 	return saveError
 }
 
+func lockfile2datafile(lockfile string) string {
+	return path.Join(path.Dir(lockfile), "info")
+}
+
 func (config *Config) DeleteExpiredPart(part int) error {
+	// assume we are running under an exclusive lock on the
+	// whole cache
 	if part < 0 {
 		part = 0
 	}
@@ -262,60 +257,46 @@ func (config *Config) DeleteExpiredPart(part int) error {
 
 	var saveError error
 	for _, lockfile := range flist {
+		err = config.DeleteHash(lockfile)
 
-		datafile := path.Join(path.Dir(lockfile), "info")
-		err = Lockedfile(lockfile, ExclusiveLock, func() error {
-			buf, err := os.ReadFile(datafile)
-			if err != nil {
-				if errors.Is(err, os.ErrNotExist) {
-					config.lockfiles = append(config.lockfiles, lockfile)
-					return nil
-				}
-				return err
-			}
-
-			obj, err := str2item(string(buf))
-			if err != nil {
-				// unknown format => avoid deletion
-				return err
-			}
-
-			// delete items older than maxAge
-			age := obj.age()
-
-			if age > config.maxAge {
-				// important to first delete datafile
-				// (should exist since we just read it)
-				err = os.Remove(datafile)
-				if err != nil {
-					return err
-				}
-
-				// clean up all folders inside given hash
-				// in case partial create leftovers there
-				dir := filepath.Dir(obj.objdir)
-				elist, err := os.ReadDir(dir)
-				if err != nil {
-					return err
-				}
-
-				for _, e := range elist {
-					if e.IsDir() {
-						objdir2 := filepath.Join(dir, e.Name())
-						config.safeRemoveAll(objdir2)
-					}
-				}
-
-				config.lockfiles = append(config.lockfiles, lockfile)
-			}
-
-			return nil
-		})
 		if err != nil {
 			saveError = fmt.Errorf("error during delete of %s : %s", lockfile, err)
 		}
 	}
 	return saveError
+}
+func (config *Config) DeleteHash(lockfile string) error {
+	datafile := lockfile2datafile(lockfile)
+
+	buf, err := os.ReadFile(datafile)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return config.safeRemoveAll(filepath.Dir(lockfile))
+		}
+		return err
+	}
+
+	obj, err := str2item(string(buf))
+	if err != nil {
+		// unknown format => avoid deletion
+		return err
+	}
+
+	// delete items older than maxAge
+	age := obj.age()
+
+	if age > config.maxAge {
+		// important to first delete datafile
+		// (should exist since we just read it)
+		err = os.Remove(datafile)
+		if err != nil {
+			return err
+		}
+
+		// delete all files, including lockfile
+		return config.safeRemoveAll(filepath.Dir(lockfile))
+	}
+	return nil
 }
 
 //const tsFormat = "2006-01-02T15:04:05.999Z07:00"
@@ -375,7 +356,7 @@ func hashString(s string) string {
 }
 
 func randomHash() string {
-	rand.Seed(time.Now().UnixNano())
+	// assume minimum go1.20 => no need for rand.Seed(time.Now().UnixNano())
 	uid := fmt.Sprintf("%d", rand.Int63())
 	return hashString(uid)
 }

@@ -1,4 +1,4 @@
-package runstring
+package gorun
 
 import (
 	"bytes"
@@ -89,9 +89,20 @@ func ExecString(c *cache.Config, goCode string, args []string, info RunInfo) err
 		}
 	}
 
+	// TODO: if periodic cleanup time has arrived
+	// take exclusive lock on Lookup
+	// but only execute cleanup if create() called
+	// => and exclude current item from deletion
+	// => we can hope to execute delete with zero time impact
+	// for the user
+	// downside: we will hold an exclusive locks during this time
+	// hmm, can we execute cache hit without lock to minimize impact ?
+	createCalled := false
 	outdir, err := c.Lookup(input, func(outdir string) error {
 
 		create := func() error {
+
+			createCalled = true
 			gofile := filepath.Join(outdir, "main.go")
 			exefile := filepath.Join(outdir, "main")
 
@@ -109,6 +120,12 @@ func ExecString(c *cache.Config, goCode string, args []string, info RunInfo) err
 		show(outdir) // outdir only here if error during compile
 		return err
 	})
+
+	if createCalled {
+		// no cached hit, e.g. we are already on a slow path
+		// => ok to check if cache trim should occur
+		//c.TrimCachePeriodically()
+	}
 
 	if err != nil {
 		return err

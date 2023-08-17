@@ -1,4 +1,4 @@
-package runstring
+package gorun
 
 import (
 	"os"

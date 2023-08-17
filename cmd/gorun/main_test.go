@@ -14,8 +14,8 @@ import (
 	"testing"
 
 	"github.com/bir3/gocompiler"
+	"github.com/bir3/gorun"
 	"github.com/bir3/gorun/cache"
-	"github.com/bir3/gorun/runstring"
 )
 
 func ensureDir(dir string) {
@@ -37,7 +37,7 @@ func tmpdir(t *testing.T) string {
 	return t.TempDir()
 }
 
-func gorun(t *testing.T, gofilename string, code string, args []string, extraEnv string) (string, error) {
+func gorunTest(t *testing.T, gofilename string, code string, args []string, extraEnv string) (string, error) {
 	// gofilename is actually .go file with #! /usr/bin/env gorun
 	dx := filepath.Dir(gofilename)
 	if dx != "" && dx != "." {
@@ -118,7 +118,7 @@ func TestCompileError(t *testing.T) {
 	}
 	`
 
-	s, err := gorun(t, "compile-error", goCompileError, []string{}, "")
+	s, err := gorunTest(t, "compile-error", goCompileError, []string{}, "")
 
 	if err == nil {
 		t.Error("expected compile error")
@@ -151,7 +151,7 @@ func TestCmdlineArgs(t *testing.T) {
 	}
 	`
 
-	s, err := gorun(t, "cmdline-args", goCmdlineArgs, []string{"900"}, "A=700")
+	s, err := gorunTest(t, "cmdline-args", goCmdlineArgs, []string{"900"}, "A=700")
 	if err != nil {
 		t.Errorf("exe failed - %s", err)
 		return
@@ -200,7 +200,7 @@ func main() {
 		os.Exit(7)
 	}
 	args := []string{}
-	err = runstring.ExecString(config, goCode, args, runstring.RunInfo{})
+	err = gorun.ExecString(config, goCode, args, gorun.RunInfo{})
 	if err != nil {
 		fmt.Printf("RunString failed - %s\n", err)
 		os.Exit(8)
