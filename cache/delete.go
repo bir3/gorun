@@ -99,12 +99,9 @@ func (config *Config) DeleteHash(lockfile string) error {
 		return err
 	}
 
-	// delete items older than maxAge
-	age := obj.age()
-
-	if age > config.maxAge {
+	if obj.age() > config.maxAge {
 		// important to first delete datafile
-		// (should exist since we just read it)
+		// - must exist since we just read it
 		err = os.Remove(datafile)
 		if err != nil {
 			return err
