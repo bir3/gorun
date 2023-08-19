@@ -25,7 +25,7 @@ import (
 //   - if user creates symlinks in cache dir, delete should only delete symlinks
 //   - if two or more P race to the same key and one process has started to create entry
 //     but fails before completion, another P will take over the task and complete it
-//   - out-of-disk space will not corrupt the cache, only fail it
+//   - out-of-disk space should not corrupt the cache, only fail it
 //		=> need validation of entry data, e.g. guard against truncation
 
 // bonus:
@@ -378,6 +378,8 @@ func (config *Config) prefix() string {
 }
 
 func (config *Config) Lookup2(input string, userCreate func(outDir string) error, useCache bool) (string, error) {
+	// NOTE: useCache ignored - if used, must not delete other outdir's that may still be in use
+
 	hs := hashString(input)
 	prefix := path.Join(config.prefix(), hs[0:2]+"-t", hs[0:40]) // use 160 bits
 	err := ensureDir(prefix)
@@ -387,11 +389,12 @@ func (config *Config) Lookup2(input string, userCreate func(outDir string) error
 	lockfile := path.Join(prefix, "lock")
 	datafile := path.Join(prefix, "info")
 
-	outdir := path.Join(prefix, randomHash()[0:8]) // 8 chars = 32 bits
+	var outdir string
 	updateContent := func(old string, writeString func(new string) error) error {
 
 		if old == "" {
 			// object not created yet
+			outdir = path.Join(prefix, randomHash()[0:8]) // 8 chars = 32 bits
 			err := os.Mkdir(outdir, 0777)
 			if err != nil {
 				return fmt.Errorf("outdir %q already exists - program error", outdir)
@@ -424,7 +427,6 @@ func (config *Config) Lookup2(input string, userCreate func(outDir string) error
 			}
 			err = writeString(item2str(obj))
 			if err != nil {
-				config.safeRemoveAll2(datafile, outdir)
 				return fmt.Errorf("cache refresh failed for file %q - %w", datafile, err)
 			}
 
