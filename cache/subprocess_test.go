@@ -7,7 +7,7 @@ import (
 	"io/fs"
 	"log"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -147,13 +147,13 @@ func lookupSubprocess(id string, delay string, m map[string]string) {
 		fmt.Println(err.Error())
 		os.Exit(8)
 	}
-	if !path.IsAbs(objDir) {
+	if !filepath.IsAbs(objDir) {
 		panic(fmt.Sprintf("Lookup did not return abs path, got objDir=%s", objDir))
 	}
 	if found {
 		fmt.Println("FOUND")
 		/*
-			f := path.Join(objDir, "data.txt")
+			f := filepath.Join(objDir, "data.txt")
 			b, err := os.ReadFile(f)
 			if err != nil {
 				panic(fmt.Sprintf("read cache object failed, file %s error %s", f, err.Error()))

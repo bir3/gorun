@@ -8,7 +8,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"path"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -160,7 +160,7 @@ func newEntry(t *testing.T, config *Config, hashOfInput string, olist []string) 
 	if len(olist) != n+1 {
 		t.Fatalf("failed to get create event for input %s", hashOfInput)
 	}
-	if !isNew || !path.IsAbs(objdir1) {
+	if !isNew || !filepath.IsAbs(objdir1) {
 		t.Fatalf("failed for hashOfInput %s", hashOfInput)
 	}
 
@@ -173,7 +173,7 @@ func newEntry(t *testing.T, config *Config, hashOfInput string, olist []string) 
 	if err != nil {
 		t.Fatalf("Lookup failed with %s", err)
 	}
-	if !found || objdir1 != objdir2 || !path.IsAbs(objdir2) {
+	if !found || objdir1 != objdir2 || !filepath.IsAbs(objdir2) {
 		t.Fatalf("lookup after create failed for hashOfInput %s", hashOfInput)
 	}
 	return objdir2
@@ -253,6 +253,7 @@ func TestDelete(t *testing.T) {
 	t.Parallel()
 
 	d := t.TempDir()
+
 	//m := map[string]any{"tmpdir64": str2base64(d)}
 
 	config, err := Create2(d, time.Second*10, false)
@@ -305,12 +306,12 @@ func TestDelete(t *testing.T) {
 
 /*
 func create(objDir string) error {
-	if !path.IsAbs(objDir) {
+	if !filepath.IsAbs(objDir) {
 		panic(fmt.Sprintf("program error: create objDir is not abspath : %s", objDir))
 	}
 	fmt.Println("create called ... = we create cached object in objDir", objDir)
 	//time.Sleep(time.Second * 2)
-	err := os.WriteFile(path.Join(objDir, "data.txt"), []byte("abc"), 0666)
+	err := os.WriteFile(filepath.Join(objDir, "data.txt"), []byte("abc"), 0666)
 	if err != nil {
 		return err
 	}

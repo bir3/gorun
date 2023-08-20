@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -25,6 +24,9 @@ type Lockpair struct {
 	datafile string
 }
 
+func (pair *Lockpair) dir() string {
+	return filepath.Dir(pair.lockfile)
+}
 func NewLockPair(dir, lockfile, datafile string) Lockpair {
 	panicIf(filepath.Base(lockfile) != lockfile)
 	panicIf(filepath.Base(datafile) != datafile)
@@ -39,7 +41,7 @@ func panicIf(doPanic bool) {
 
 func mkdirAllRace(dir string) error {
 	// safe for many processes to run concurrently
-	if !path.IsAbs(dir) {
+	if !filepath.IsAbs(dir) {
 		return fmt.Errorf("program error: folder is not absolute path: %s", dir)
 	}
 	missing, err := missingFolders(dir, []string{})
@@ -72,7 +74,7 @@ func missingFolders(dir string, missing []string) ([]string, error) {
 			return []string{}, fmt.Errorf("not a folder: %s", dir)
 		}
 		missing = append(missing, dir)
-		d2 := path.Dir(dir)
+		d2 := filepath.Dir(dir)
 		if d2 == dir {
 			break
 		}
@@ -84,22 +86,26 @@ func missingFolders(dir string, missing []string) ([]string, error) {
 func (config *Config) Dir() string {
 	return config.dir
 }
-func (config *Config) global() Lockpair {
-	return NewLockPair(config.dir, "global.lock", "config.json")
+func (config *Config) globalLock() Lockpair {
+	return NewLockPair(config.dir, "lockfile", "config.json")
 }
 func (config *Config) partLock(part int) Lockpair {
 	return NewLockPair(config.partPrefix(part), "lockfile", "info")
 }
+func (config *Config) itemLock(hash string) Lockpair {
+	dir := filepath.Join(config.partPrefixFromHash(hash), hash[0:40]) // use 40x4 = 160 bits
+	return NewLockPair(dir, "lockfile", "info")
+}
 
 func (config *Config) prefix() string {
-	return path.Join(config.dir, "data")
+	return filepath.Join(config.dir, "data")
 }
 func (config *Config) partPrefix(part int) string {
 	if part < 0 || part > 255 {
 		panic(fmt.Sprintf("bad part %d", part))
 	}
 	hash2 := fmt.Sprintf("%02x-t", part)
-	return path.Join(config.prefix(), hash2)
+	return filepath.Join(config.prefix(), hash2)
 }
 func (config *Config) partPrefixFromHash(hash string) string {
 	i, err := strconv.ParseInt(hash[0:2], 16, 32)
@@ -118,8 +124,8 @@ func NewConfig(dir string, maxAge time.Duration) (*Config, error) {
 	if !utf8.Valid([]byte(dir)) {
 		return nil, fmt.Errorf("config dir is not utf8: %q", dir)
 	}
-	dir = path.Clean(dir) // only ends in trailing slash if root /
-	if !path.IsAbs(dir) || strings.Contains(dir, "\x00") {
+	dir = filepath.Clean(dir) // only ends in trailing slash if root /
+	if !filepath.IsAbs(dir) || strings.Contains(dir, "\x00") {
 		return nil, fmt.Errorf("bad characters in config dir : %q", dir)
 	}
 
@@ -176,7 +182,7 @@ func NewConfig(dir string, maxAge time.Duration) (*Config, error) {
 		return nil
 	}
 
-	g := config.global()
+	g := config.globalLock()
 	err := UpdateMultiprocess(g.lockfile, g.datafile, updateContent)
 	if err != nil {
 		return nil, err
@@ -192,6 +198,6 @@ func DefaultConfig() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	dir = path.Join(dir, "gorun")
+	dir = filepath.Join(dir, "gorun")
 	return NewConfig(dir, maxAge)
 }

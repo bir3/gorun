@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"math/rand"
 	"os"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -78,7 +77,7 @@ func (config *Config) GetPartInfo(stat *Stat, part int) {
 }
 
 func lockfile2datafile(lockfile string) string {
-	return path.Join(path.Dir(lockfile), "info")
+	return filepath.Join(filepath.Dir(lockfile), "info")
 }
 
 //const tsFormat = "2006-01-02T15:04:05.999Z07:00"
@@ -160,20 +159,21 @@ func (config *Config) Lookup2(input string, userCreate func(outDir string) error
 	// NOTE: useCache ignored - if used, must not delete other outdir's that may still be in use
 
 	hs := hashString(input)
-	prefix := path.Join(config.partPrefixFromHash(hs), hs[0:40]) // use 160 bits
-	err := ensureDir(prefix)
+	pair := config.itemLock(hs)
+	lockfile := pair.lockfile
+	datafile := pair.datafile
+
+	err := ensureDir(pair.dir())
 	if err != nil {
-		return "/invalid/outdir/1", fmt.Errorf("failed to create prefix dir %q - %w", prefix, err)
+		return "/invalid/outdir/1", fmt.Errorf("failed to create prefix dir %q - %w", pair.dir(), err)
 	}
-	lockfile := path.Join(prefix, "lock")
-	datafile := path.Join(prefix, "info")
 
 	var outdir string
 	updateContent := func(old string, writeString func(new string) error) error {
 
 		if old == "" {
 			// object not created yet
-			outdir = path.Join(prefix, randomHash()[0:8]) // 8 chars = 32 bits
+			outdir = filepath.Join(pair.dir(), randomHash()[0:8]) // 8 chars = 32 bits
 			err := os.Mkdir(outdir, 0777)
 			if err != nil {
 				return fmt.Errorf("outdir %q already exists - program error", outdir)
@@ -216,7 +216,7 @@ func (config *Config) Lookup2(input string, userCreate func(outDir string) error
 	withGlobalLock := func() error {
 		return UpdateMultiprocess(lockfile, datafile, updateContent)
 	}
-	err = Lockedfile(config.global().lockfile, SharedLock, withGlobalLock)
+	err = Lockedfile(config.globalLock().lockfile, SharedLock, withGlobalLock)
 	if err != nil {
 		return "/invalid/outdir/2", err
 	}

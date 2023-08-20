@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 )
 
@@ -43,7 +42,7 @@ func (config *Config) DeleteExpiredItems() error {
 
 	// simplify cache cleaup by hold exclusive lock while we look
 	// for expired items
-	Lockedfile(config.global().lockfile, ExclusiveLock, func() error {
+	Lockedfile(config.globalLock().lockfile, ExclusiveLock, func() error {
 
 		for k := 0; k < 256; k++ {
 			err2 := config.DeleteExpiredPart(k)
@@ -60,15 +59,19 @@ func (config *Config) DeleteExpiredItems() error {
 func (config *Config) DeleteExpiredPart(part int) error {
 	// assume we are running under an exclusive lock on the
 	// whole cache
-	glob := path.Join(config.partPrefix(part), "*", "lock")
+	glob := filepath.Join(config.partPrefix(part), "*", "lockfile")
 
 	flist, err := filepath.Glob(glob)
+
+	//fmt.Printf("## glob %s = %d items\n", glob, len(flist))
+
 	if err != nil {
 		return fmt.Errorf("glob failed - %w", err)
 	}
 
 	var saveError error
 	for _, lockfile := range flist {
+		//fmt.Printf("## deleteHash %s\n", lockfile)
 		err = config.DeleteHash(lockfile)
 
 		if err != nil {
