@@ -10,7 +10,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -30,25 +29,6 @@ import (
 //   - create primitive which guarantees one P will execute task, even though
 //  	many run at the same time and some will fail halfway during task
 //		= same as a cache like this, but can we make it simpler ?
-
-type Config struct {
-	dir string // no trailing slashes
-
-	maxAge time.Duration // safe to delete objects older than this
-	re1    *regexp.Regexp
-	re2    *regexp.Regexp
-}
-type Lockpair struct {
-	lockfile string
-	datafile string
-}
-
-func (config *Config) Dir() string {
-	return config.dir
-}
-func (config *Config) global() Lockpair {
-	return Lockpair{path.Join(config.dir, "global.lock"), path.Join(config.dir, "config.json")}
-}
 
 func jsonString(m map[string]string) (string, error) {
 

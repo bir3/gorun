@@ -12,6 +12,18 @@ import (
 	"unicode/utf8"
 )
 
+type Config struct {
+	dir string // no trailing slashes
+
+	maxAge time.Duration // safe to delete objects older than this
+	re1    *regexp.Regexp
+	re2    *regexp.Regexp
+}
+type Lockpair struct {
+	lockfile string
+	datafile string
+}
+
 func mkdirAllRace(dir string) error {
 	// safe for many processes to run concurrently
 	if !path.IsAbs(dir) {
@@ -54,6 +66,13 @@ func missingFolders(dir string, missing []string) ([]string, error) {
 		dir = d2
 	}
 	return []string{}, fmt.Errorf("program error at folder: %s", dir)
+}
+
+func (config *Config) Dir() string {
+	return config.dir
+}
+func (config *Config) global() Lockpair {
+	return Lockpair{path.Join(config.dir, "global.lock"), path.Join(config.dir, "config.json")}
 }
 
 func NewConfig(dir string, maxAge time.Duration) (*Config, error) {
