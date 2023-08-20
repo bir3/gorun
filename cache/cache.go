@@ -160,7 +160,7 @@ func (config *Config) Lookup2(input string, userCreate func(outDir string) error
 	// NOTE: useCache ignored - if used, must not delete other outdir's that may still be in use
 
 	hs := hashString(input)
-	prefix := path.Join(config.prefix(), hs[0:2]+"-t", hs[0:40]) // use 160 bits
+	prefix := path.Join(config.partPrefixFromHash(hs), hs[0:40]) // use 160 bits
 	err := ensureDir(prefix)
 	if err != nil {
 		return "/invalid/outdir/1", fmt.Errorf("failed to create prefix dir %q - %w", prefix, err)

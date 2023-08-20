@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -22,6 +23,18 @@ type Config struct {
 type Lockpair struct {
 	lockfile string
 	datafile string
+}
+
+func NewLockPair(dir, lockfile, datafile string) Lockpair {
+	panicIf(filepath.Base(lockfile) != lockfile)
+	panicIf(filepath.Base(datafile) != datafile)
+	return Lockpair{filepath.Join(dir, lockfile), filepath.Join(dir, datafile)}
+}
+
+func panicIf(doPanic bool) {
+	if doPanic {
+		panic("program error")
+	}
 }
 
 func mkdirAllRace(dir string) error {
@@ -72,8 +85,12 @@ func (config *Config) Dir() string {
 	return config.dir
 }
 func (config *Config) global() Lockpair {
-	return Lockpair{path.Join(config.dir, "global.lock"), path.Join(config.dir, "config.json")}
+	return NewLockPair(config.dir, "global.lock", "config.json")
 }
+func (config *Config) partLock(part int) Lockpair {
+	return NewLockPair(config.partPrefix(part), "lockfile", "info")
+}
+
 func (config *Config) prefix() string {
 	return path.Join(config.dir, "data")
 }
@@ -82,7 +99,14 @@ func (config *Config) partPrefix(part int) string {
 		panic(fmt.Sprintf("bad part %d", part))
 	}
 	hash2 := fmt.Sprintf("%02x-t", part)
-	return path.Join(config.dir, "data", hash2)
+	return path.Join(config.prefix(), hash2)
+}
+func (config *Config) partPrefixFromHash(hash string) string {
+	i, err := strconv.ParseInt(hash[0:2], 16, 32)
+	if err != nil {
+		panic(err)
+	}
+	return config.partPrefix(int(i))
 }
 
 func NewConfig(dir string, maxAge time.Duration) (*Config, error) {
@@ -118,14 +142,14 @@ func NewConfig(dir string, maxAge time.Duration) (*Config, error) {
 
 		//fmt.Println("# updateContent", old, final)
 		if old == "" { // = no existing file
-			prefix := filepath.Join(dir, "data")
+			prefix := config.prefix()
 			err := ensureDir(prefix)
 			if err != nil {
 				return err
 			}
 			// create subdirs
 			for i := 0; i < 256; i++ {
-				name := filepath.Join(dir, "data", fmt.Sprintf("%02x-t", i))
+				name := config.partPrefix(i)
 				err := ensureDir(name)
 				if err != nil {
 					return err
