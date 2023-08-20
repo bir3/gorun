@@ -60,12 +60,7 @@ func (config *Config) DeleteExpiredItems() error {
 func (config *Config) DeleteExpiredPart(part int) error {
 	// assume we are running under an exclusive lock on the
 	// whole cache
-	if part < 0 {
-		part = 0
-	}
-	part = part % 256
-	hs2 := fmt.Sprintf("%02x-t", part)
-	glob := path.Join(config.dir, "data", hs2, "*", "lock")
+	glob := path.Join(config.partPrefix(part), "*", "lock")
 
 	flist, err := filepath.Glob(glob)
 	if err != nil {

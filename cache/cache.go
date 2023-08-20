@@ -60,8 +60,7 @@ func (config *Config) GetInfo() (Stat, error) {
 }
 
 func (config *Config) GetPartInfo(stat *Stat, part int) {
-	hs2 := fmt.Sprintf("%02x-t", part)
-	dir := path.Join(config.dir, "data", hs2)
+	dir := config.partPrefix(part)
 
 	e := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err == nil && !d.IsDir() { //&& d.Name() == "main" {
@@ -155,9 +154,6 @@ func Lookup(input string, create func(outDir string) error) (string, error) {
 func (config *Config) Lookup(input string, create func(outDir string) error) (string, error) {
 	const useCache = true
 	return config.Lookup2(input, create, useCache)
-}
-func (config *Config) prefix() string {
-	return path.Join(config.dir, "data")
 }
 
 func (config *Config) Lookup2(input string, userCreate func(outDir string) error, useCache bool) (string, error) {

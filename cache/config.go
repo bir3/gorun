@@ -74,6 +74,16 @@ func (config *Config) Dir() string {
 func (config *Config) global() Lockpair {
 	return Lockpair{path.Join(config.dir, "global.lock"), path.Join(config.dir, "config.json")}
 }
+func (config *Config) prefix() string {
+	return path.Join(config.dir, "data")
+}
+func (config *Config) partPrefix(part int) string {
+	if part < 0 || part > 255 {
+		panic(fmt.Sprintf("bad part %d", part))
+	}
+	hash2 := fmt.Sprintf("%02x-t", part)
+	return path.Join(config.dir, "data", hash2)
+}
 
 func NewConfig(dir string, maxAge time.Duration) (*Config, error) {
 
