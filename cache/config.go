@@ -87,10 +87,11 @@ func (config *Config) Dir() string {
 	return config.dir
 }
 func (config *Config) globalLock() Lockpair {
-	return NewLockPair(config.dir, "lockfile", "config.json")
+	return NewLockPair(config.dir, "config.lock", "config.json")
 }
-func (config *Config) partLock(part int) Lockpair {
-	return NewLockPair(config.partPrefix(part), "lockfile", "info")
+
+func (config *Config) partLock(hash string) Lockpair {
+	return NewLockPair(config.partPrefixFromHash(hash), "lockfile", "info")
 }
 func (config *Config) itemLock(hash string) Lockpair {
 	dir := filepath.Join(config.partPrefixFromHash(hash), hash[0:40]) // use 40x4 = 160 bits

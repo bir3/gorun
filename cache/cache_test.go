@@ -246,6 +246,12 @@ func TestBasic(t *testing.T) {
 	if obj.age() > time.Second*10 {
 		t.Fatal("fresh object should not be old")
 	}
+	/*
+		for i:=0; i<1000;i++ {
+			hex:= fmt.Sprintf("%02x", i)
+
+		}
+	*/
 }
 
 func TestDelete(t *testing.T) {

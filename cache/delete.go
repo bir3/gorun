@@ -35,51 +35,63 @@ func (config *Config) safeRemoveAll(objdir string) error {
 	return os.RemoveAll(objdir)
 }
 
+/*
+	if lastTrim + maxAge/10 > time.now()
+		mkdir trim-running
+		= race, the one who wins, executes trim operation
+
+	if trimdir age is > maxAge/20, feel free to delete it
+		= no harm to delete, will only increase delay
+*/
+
 func (config *Config) DeleteExpiredItems() error {
 	// part 1 : cache can operate while we delete since we
 	//          use fine-grained per-item locks
 	var saveError error
 
-	// simplify cache cleaup by hold exclusive lock while we look
-	// for expired items
-	Lockedfile(config.globalLock().lockfile, ExclusiveLock, func() error {
-
-		for k := 0; k < 256; k++ {
-			err2 := config.DeleteExpiredPart(k)
-			if err2 != nil {
-				saveError = err2
-			}
+	for k := 0; k < 256; k++ {
+		err2 := config.DeleteExpiredPart(k)
+		if err2 != nil {
+			saveError = err2
 		}
-		return nil
-	})
+	}
 
 	return saveError
 }
 
 func (config *Config) DeleteExpiredPart(part int) error {
-	// assume we are running under an exclusive lock on the
-	// whole cache
-	glob := filepath.Join(config.partPrefix(part), "*", "lockfile")
+	// we run under an exclusive lock on our part of the cache
 
-	flist, err := filepath.Glob(glob)
+	withPartLock := func() error {
+		// we must only search for lockfiles under an exclusive lock
+		// as otherwise an item being created may only have reached
+		// the point of creating the lockfile and not yet locked it
+		glob := filepath.Join(config.partPrefix(part), "*", "lockfile")
 
-	//fmt.Printf("## glob %s = %d items\n", glob, len(flist))
-
-	if err != nil {
-		return fmt.Errorf("glob failed - %w", err)
-	}
-
-	var saveError error
-	for _, lockfile := range flist {
-		//fmt.Printf("## deleteHash %s\n", lockfile)
-		err = config.DeleteHash(lockfile)
+		flist, err := filepath.Glob(glob)
 
 		if err != nil {
-			saveError = fmt.Errorf("error during delete of %s : %s", lockfile, err)
+			return fmt.Errorf("glob failed - %w", err)
 		}
+
+		// NOTE: deleting lockfile is never safe, except under a higher lock,
+		// partLock because first we need to create the lockfile and then lock
+		// and file could be deleted before we lock (partLock here prevents that)
+		var saveError error
+		for _, lockfile := range flist {
+			//fmt.Printf("## deleteHash %s\n", lockfile)
+			err = config.DeleteHash(lockfile)
+
+			if err != nil {
+				saveError = fmt.Errorf("error during delete of %s : %s", lockfile, err)
+			}
+		}
+		return saveError
 	}
-	return saveError
+	hash := fmt.Sprintf("%02x", part)
+	return Lockedfile(config.partLock(hash).lockfile, ExclusiveLock, withPartLock)
 }
+
 func (config *Config) DeleteHash(lockfile string) error {
 	datafile := lockfile2datafile(lockfile)
 

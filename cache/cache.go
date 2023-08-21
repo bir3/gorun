@@ -212,9 +212,11 @@ func (config *Config) Lookup2(input string, userCreate func(outDir string) error
 		}
 		return nil
 	}
-
-	withGlobalLock := func() error {
+	withPartLock := func() error {
 		return UpdateMultiprocess(lockfile, datafile, updateContent)
+	}
+	withGlobalLock := func() error {
+		return Lockedfile(config.partLock(hs).lockfile, SharedLock, withPartLock)
 	}
 	err = Lockedfile(config.globalLock().lockfile, SharedLock, withGlobalLock)
 	if err != nil {
