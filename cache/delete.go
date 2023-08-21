@@ -29,30 +29,62 @@ func (config *Config) safeRemoveAll(objdir string) error {
 	d1 = filepath.Dir(d2)
 	if !config.re1.MatchString(filepath.Base(d1)) ||
 		!config.re2.MatchString(filepath.Base(d2)) {
-		panic(fmt.Errorf("removeAll: bad objdir %s", objdir)) // debug
 		return fmt.Errorf("removeAll: bad objdir %s", objdir)
 	}
 	return os.RemoveAll(objdir)
 }
 
-/*
-	if lastTrim + maxAge/10 > time.now()
-		mkdir trim-running
-		= race, the one who wins, executes trim operation
+func (config *Config) trimPending() bool {
+	// return true if we should trim/delete old objects
+	// - if any error, we return true
 
-	if trimdir age is > maxAge/20, feel free to delete it
-		= no harm to delete, will only increase delay
-*/
+	buf, err := os.ReadFile(config.trimLock().datafile) // unix timestamp of last trim
+	if err != nil {
+		return true
+	} else {
+		item, err := str2item(string(buf))
+		if err != nil {
+			return true
+		}
+		return item.age() > config.maxAge/10
+	}
+}
 
 func (config *Config) DeleteExpiredItems() error {
-	// part 1 : cache can operate while we delete since we
-	//          use fine-grained per-item locks
-	var saveError error
 
-	for k := 0; k < 256; k++ {
-		err2 := config.DeleteExpiredPart(k)
-		if err2 != nil {
-			saveError = err2
+	if !config.trimPending() {
+		return nil // fast common path (no lock)
+	}
+
+	runTrim := false
+	pair := config.trimLock()
+
+	withLock := func() error {
+		if !config.trimPending() {
+			return nil // other process P already updated
+		}
+		item := Item{}
+		item.objdir = "/gorun/trim"
+		item.refresh()
+		err := os.WriteFile(pair.datafile, []byte(item2str(item)), 0666)
+		if err != nil {
+			return err
+		}
+		runTrim = true
+		return nil
+	}
+
+	err := Lockedfile(pair.lockfile, ExclusiveLock, withLock)
+	if err != nil {
+		return err
+	}
+	var saveError error
+	if runTrim {
+		for k := 0; k < 256; k++ {
+			err = config.DeleteExpiredPart(k)
+			if err != nil {
+				saveError = err
+			}
 		}
 	}
 
@@ -79,7 +111,6 @@ func (config *Config) DeleteExpiredPart(part int) error {
 		// and file could be deleted before we lock (partLock here prevents that)
 		var saveError error
 		for _, lockfile := range flist {
-			//fmt.Printf("## deleteHash %s\n", lockfile)
 			err = config.DeleteHash(lockfile)
 
 			if err != nil {

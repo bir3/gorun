@@ -59,36 +59,6 @@ func updateDatafile(datafile string, update func(old string, writeString func(ne
 	return nil
 }
 
-func OnceMultiprocess(lockfile string, datafile string, userFunc func() error) error {
-	const FinalString = "done\n"
-	const RunString = "f..\n"
-	if len(RunString) > len(FinalString) {
-		return fmt.Errorf("program error")
-	}
-	updateContent := func(old string, writeString func(new string) error) error {
-		if old != FinalString {
-			// extra write to test that commit is possible
-			// note: string must be shorter than our final string
-			err := writeString(RunString)
-			if err == nil {
-				err = userFunc()
-				if err != nil {
-					return fmt.Errorf("userFunc failed - %w", err)
-				}
-				err = writeString(FinalString)
-			}
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	f2 := func() error {
-		return updateDatafile(datafile, updateContent)
-	}
-	return Lockedfile(lockfile, ExclusiveLock, f2)
-}
-
 func UpdateMultiprocess(lockfile string, datafile string, updateContent func(old string, writeString func(new string) error) error) error {
 	f2 := func() error {
 		return updateDatafile(datafile, updateContent)

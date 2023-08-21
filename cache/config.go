@@ -89,6 +89,9 @@ func (config *Config) Dir() string {
 func (config *Config) globalLock() Lockpair {
 	return NewLockPair(config.dir, "config.lock", "config.json")
 }
+func (config *Config) trimLock() Lockpair {
+	return NewLockPair(config.dir, "trim.lock", "trim.txt")
+}
 
 func (config *Config) partLock(hash string) Lockpair {
 	return NewLockPair(config.partPrefixFromHash(hash), "lockfile", "info")
@@ -134,8 +137,6 @@ func NewConfig(dir string, maxAge time.Duration) (*Config, error) {
 
 	mkdirAllRace(dir)
 
-	//lockfile, datafile := config.global()
-	//lockfile, datafile := config.global()
 	m := make(map[string]string)
 
 	updateContent := func(old string, writeString func(new string) error) error {
@@ -147,7 +148,6 @@ func NewConfig(dir string, maxAge time.Duration) (*Config, error) {
 			return err
 		}
 
-		//fmt.Println("# updateContent", old, final)
 		if old == "" { // = no existing file
 			prefix := config.prefix()
 			err := ensureDir(prefix)
@@ -194,7 +194,6 @@ func NewConfig(dir string, maxAge time.Duration) (*Config, error) {
 
 func DefaultConfig() (*Config, error) {
 	maxAge := 10 * 24 * time.Hour
-	//log := false
 	dir, err := os.UserCacheDir()
 	if err != nil {
 		return nil, err

@@ -15,19 +15,15 @@ import (
 )
 
 // requirements:
-//   - graceful failure: if locks are no-op, cache should still work mostly ok
+//   - if two or more P race to the same key and one process has started to create entry
+//     but fails before completion, another P will take over the task and complete its
 //   - protect against user error: if cache-dir is set to root '/', delete operation should delete
 //     zero or very few files
 //   - if user creates symlinks in cache dir, delete should only delete symlinks
-//   - if two or more P race to the same key and one process has started to create entry
-//     but fails before completion, another P will take over the task and complete it
 //   - out-of-disk space should not corrupt the cache, only fail it
 //		=> need validation of entry data, e.g. guard against truncation
-
-// bonus:
-//   - create primitive which guarantees one P will execute task, even though
-//  	many run at the same time and some will fail halfway during task
-//		= same as a cache like this, but can we make it simpler ?
+//   - graceful failure: if locks are no-op, cache should still work mostly ok
+//
 
 func jsonString(m map[string]string) (string, error) {
 
@@ -62,7 +58,7 @@ func (config *Config) GetPartInfo(stat *Stat, part int) {
 	dir := config.partPrefix(part)
 
 	e := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err == nil && !d.IsDir() { //&& d.Name() == "main" {
+		if err == nil && !d.IsDir() {
 			info, err := d.Info()
 			if err == nil {
 				stat.SizeBytes += info.Size()
@@ -79,8 +75,6 @@ func (config *Config) GetPartInfo(stat *Stat, part int) {
 func lockfile2datafile(lockfile string) string {
 	return filepath.Join(filepath.Dir(lockfile), "info")
 }
-
-//const tsFormat = "2006-01-02T15:04:05.999Z07:00"
 
 type Item struct {
 	objdir          string
@@ -106,7 +100,7 @@ func item2str(obj Item) string {
 func str2item(s string) (Item, error) {
 	// format: objdir + " " + unixtime + "\n"
 	// extra content after newline is allowed and ignored
-	//var t time.Time
+
 	k := strings.Index(s, "\n")
 	if k < 0 {
 		return Item{"", 0, 0}, fmt.Errorf("parse, missing newline")
@@ -125,7 +119,6 @@ func str2item(s string) (Item, error) {
 	if err != nil {
 		return Item{"", 0, 0}, fmt.Errorf("parse int failed: %q - %w", e[2], err)
 	}
-	//t, err = time.Parse(tsFormat, e[2])
 	return Item{e[0], i, iNano}, nil
 
 }
@@ -201,7 +194,6 @@ func (config *Config) Lookup2(input string, userCreate func(outDir string) error
 			outdir = obj.objdir
 			age := obj.age()
 			if age > config.maxAge/10 {
-				//fmt.Printf("### age=%s => refresh file %q\n", age, datafile)
 				obj.refresh()
 			}
 			err = writeString(item2str(obj))
