@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -115,7 +116,7 @@ func TestRefresh(t *testing.T) {
 	t.Parallel()
 	cacheDir := t.TempDir()
 
-	config, err := Create2(cacheDir, time.Second*30, false)
+	config, err := newConfig(cacheDir, time.Millisecond*30)
 
 	if err != nil {
 		t.Fatalf("failed to create cache %s", err)
@@ -191,32 +192,7 @@ func TestLookup(t *testing.T) {
 		{{$.exe}} --entry=lookupSubprocess --map=tmpdir64={{$.tmpdir64}}
 		`, m))
 
-	/*
-		cleanTmpDir(t)
-		out := testLookup(t, template2str(`
-			{{$.exe}} --entry=lookupSubprocess --id=0 --delay=lock=20
-			{{$.exe}} --entry=lookupSubprocess --id=1 --delay=create-lockfile=10
-			{{$.exe}} --entry=lookupSubprocess --id=2 --delay=create-lockfile=10
-			`, nil))
-		verify(out[0], "lockfile created,FOUND")
-
-		cleanTmpDir(t)
-		out = testLookup(t, template2str(`
-			{{$.exe}} --entry=lookupSubprocess --id=0
-			{{$.exe}} --entry=lookupSubprocess --id=1 --delay=create-lockfile=10
-			{{$.exe}} --entry=lookupSubprocess --id=2 --delay=create-lockfile=10
-			`, nil))
-		verify(out[0], "lockfile created,NEW")
-	*/
 }
-
-/*
-	create objects
-	wait expire time
-	count objects
-	create new object
-	verify expired objects are deleted
-*/
 
 func createObj(config *Config, hashOfInput string) {
 	_, _ = config.Lookup(hashOfInput, func(objdir string) error {
@@ -246,12 +222,24 @@ func TestBasic(t *testing.T) {
 	if obj.age() > time.Second*10 {
 		t.Fatal("fresh object should not be old")
 	}
-	/*
-		for i:=0; i<1000;i++ {
-			hex:= fmt.Sprintf("%02x", i)
+	config, err := newConfig(t.TempDir(), time.Millisecond*200)
+	if err != nil {
+		t.Fatal(err)
+	}
 
+	for i := 0; i < 1000; i++ {
+		hash := hashString(fmt.Sprintf("%d", i))
+		d1 := config.partPrefixFromHash(hash)
+		i, err := strconv.ParseInt(hash[0:2], 16, 32)
+		if err != nil {
+			t.Fatal(err)
 		}
-	*/
+		d2 := config.partPrefix(int(i))
+		if d1 != d2 {
+			t.Fatal(err)
+		}
+	}
+
 }
 
 func TestDelete(t *testing.T) {
@@ -262,8 +250,7 @@ func TestDelete(t *testing.T) {
 
 	//m := map[string]any{"tmpdir64": str2base64(d)}
 
-	config, err := Create2(d, time.Second*10, false)
-	config.maxAge = time.Millisecond * 200 //
+	config, err := newConfig(d, time.Millisecond*200)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,96 +270,13 @@ func TestDelete(t *testing.T) {
 
 	expectCountFiles(t, d, "some-", 1)
 
-	/*
-		out := testLookup(t, template2str(`
-			{{$.exe}} --entry=lookupSubprocess --map=tmpdir64={{$.tmpdir64}}
-		`, m))
-		verify(out[0], "NEW")
-
-		// state: one object now exists in cache
-
-		out = runProcessList(t, template2str(`
-			# we run 10ms later than the processes that deletes objects
-			# => we will re-create object
-			# => expect to see "NEW" = new cache item created
-			{{$.exe}} --entry=lookupSubprocess --id=0 --expire_ms=5 --delay=lookup-start=20
-
-			# we set object expire age to 5ms
-			# then we wait 10ms so that we have expired objects
-			# => existing object will be deleted
-			{{$.exe}} --entry=deleteSubprocess --id=1 --expire_ms=5 --delay=delete=10
-		`, nil))
-
-		//printList(out)
-		if !hasLine(out[0], "NEW") {
-			t.Fatalf("TestDelete failed")
-		}
-	*/
 }
-
-/*
-func create(objDir string) error {
-	if !filepath.IsAbs(objDir) {
-		panic(fmt.Sprintf("program error: create objDir is not abspath : %s", objDir))
-	}
-	fmt.Println("create called ... = we create cached object in objDir", objDir)
-	//time.Sleep(time.Second * 2)
-	err := os.WriteFile(filepath.Join(objDir, "data.txt"), []byte("abc"), 0666)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (config *Config) setDelay(s string) {
-	// key=20,key2=30,...
-	if s != "" {
-		for _, x := range strings.Split(s, ",") {
-			e := strings.Split(x, "=")
-			key, value := e[0], e[1]
-
-			if strings.TrimSpace(key) != key || len(strings.TrimSpace(key)) == 0 {
-				panic(fmt.Sprintf("bad key %q", key))
-			}
-			if strings.TrimSpace(value) != value {
-				panic(fmt.Sprintf("bad value %q", value))
-			}
-			/*
-				valueInt, err := strconv.Atoi(value)
-				if err != nil {
-					panic(fmt.Sprintf("bad initDelay string: %s ; can't convert %s to int", s, value))
-				}
-				config.testDelayMs[key] = valueInt
-
-		}
-	}
-}
-*/
 
 type CmdResult struct {
 	id  int
 	out string
 	err error
 }
-
-/*
-func verify(out string, spec string) {
-	expect := strings.Split(spec, ",")
-	for _, line := range strings.Split(out, "\n") {
-		if len(expect) == 0 {
-			break
-		}
-		if line == expect[0] {
-			//fmt.Println("expect ok", expect[0])
-			expect = expect[1:]
-		}
-	}
-	if len(expect) != 0 {
-		panic(fmt.Sprintf("scheduling fault: did not find event %s", expect[0]))
-	}
-	//fmt.Println("expect ok")
-}
-*/
 
 func filter(slist []string, f func(s string) bool) []string {
 	out := []string{}

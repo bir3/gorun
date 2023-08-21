@@ -124,6 +124,13 @@ func NewConfig(dir string, maxAge time.Duration) (*Config, error) {
 	if maxAge < 10*time.Second {
 		return nil, fmt.Errorf("maxAge minimum is 10 seconds")
 	}
+	return newConfig(dir, maxAge)
+}
+
+func newConfig(dir string, maxAge time.Duration) (*Config, error) {
+	if maxAge < 1*time.Millisecond {
+		return nil, fmt.Errorf("internal maxAge minimum is 1 millisecond")
+	}
 
 	if !utf8.Valid([]byte(dir)) {
 		return nil, fmt.Errorf("config dir is not utf8: %q", dir)

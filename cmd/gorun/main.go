@@ -23,6 +23,7 @@ func GorunVersion() string {
 	return "0.4"
 }
 
+
 func readFileAndStrip(filename string) string {
 	var s string
 	if filename == "-" {
@@ -82,7 +83,8 @@ usage:
 		helpStr += "  -h for help"
 	} else {
 		helpStr += `  -h for help
-  -show show cache location`
+  -show show cache location
+  -trim delete expired items now`
 	}
 	helpStr += `
   filename or "-" for stdin; first line can be #! /usr/bin/env gorun
@@ -94,26 +96,25 @@ usage:
 		fmt.Printf("gorun version %s\n", GorunVersion())
 		fmt.Printf("go compiler version %s\n", gocompiler.GoVersion())
 	}
+	if help {
+		showCache()
+	}
+	fmt.Println()
+}
+
+func showCache() {
 	c, errCache := cache.DefaultConfig()
 
 	if errCache == nil {
-		err := c.DeleteExpiredItems()
-		if err != nil {
-			fmt.Printf("cache trim error: %s\n", err)
-		}
 		info, err := c.GetInfo()
 		if err == nil {
-			if help {
-				fmt.Printf("cache size is %d MB for %d items in %s\n", info.SizeBytes/1e6, info.Count, info.Dir)
-			}
+			fmt.Printf("cache size is %d MB for %d items in %s\n", info.SizeBytes/1e6, info.Count, info.Dir)
 		} else {
 			fmt.Printf("cache stat error : %s\n", err)
 		}
 	} else {
 		fmt.Printf("cache init failed: %s\n", errCache)
-		os.Exit(4)
 	}
-	fmt.Println()
 }
 
 func main() {
@@ -128,6 +129,7 @@ func main() {
 	args, filename, programArgs := splitArgs(os.Args[1:])
 
 	showFlag := false
+	trimFlag := false
 
 	help := false
 	for len(args) > 0 {
@@ -141,7 +143,8 @@ func main() {
 				case "-show":
 					// show code
 					showFlag = true
-
+				case "-trim":
+					trimFlag = true
 				default:
 					errExit(fmt.Sprintf("unknown option %s", a0))
 				}
@@ -154,6 +157,19 @@ func main() {
 
 	if filename == "help" {
 		help = true
+	}
+
+	if trimFlag {
+		c, err := cache.DefaultConfig()
+		fmt.Printf("Start trim ...\n")
+		if err == nil {
+			err = c.TrimNow()
+		}
+		if err != nil {
+			fmt.Printf("ERROR: %s\n", err)
+		}
+		showCache()
+		return
 	}
 
 	if filename == "" || help {

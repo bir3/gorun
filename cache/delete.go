@@ -57,12 +57,26 @@ func (config *Config) DeleteExpiredItems() error {
 	}
 
 	runTrim := false
-	pair := config.trimLock()
 
+	checkIfRefreshNeeded := true
+	runTrim, err := config.updateTrimRefreshTime(checkIfRefreshNeeded)
+	if err != nil {
+		return err
+	}
+	if runTrim {
+		return config.TrimNow()
+	}
+	return nil
+}
+
+func (config *Config) updateTrimRefreshTime(checkIfRefreshNeeded bool) (bool, error) {
+	pair := config.trimLock()
+	updated := false
 	withLock := func() error {
-		if !config.trimPending() {
+		if checkIfRefreshNeeded && !config.trimPending() {
 			return nil // other process P already updated
 		}
+
 		item := Item{}
 		item.objdir = "/gorun/trim"
 		item.refresh()
@@ -70,25 +84,31 @@ func (config *Config) DeleteExpiredItems() error {
 		if err != nil {
 			return err
 		}
-		runTrim = true
+		updated = true
 		return nil
 	}
 
 	err := Lockedfile(pair.lockfile, ExclusiveLock, withLock)
-	if err != nil {
-		return err
-	}
+	return updated, err
+}
+
+func (config *Config) TrimNow() error {
 	var saveError error
-	if runTrim {
-		for k := 0; k < 256; k++ {
-			err = config.DeleteExpiredPart(k)
-			if err != nil {
-				saveError = err
-			}
+
+	for k := 0; k < 256; k++ {
+		err := config.DeleteExpiredPart(k)
+		if err != nil && saveError == nil {
+			saveError = err
+		}
+		checkIfRefreshNeeded := false
+		_, err = config.updateTrimRefreshTime(checkIfRefreshNeeded)
+		if err != nil && saveError == nil {
+			saveError = err
 		}
 	}
 
 	return saveError
+
 }
 
 func (config *Config) DeleteExpiredPart(part int) error {
