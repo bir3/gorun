@@ -194,14 +194,11 @@ func TestRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create cache %s", err)
 	}
-	//olist := make([]string, 0, 100) // high capacity so we can pass by reference
 
-	//objdir1 := newEntry(t, config, "bb", olist)
 	var isNew bool
 	objdir1, err := config.Lookup("bb", func(objdir string) error {
 		isNew = true
 		err := os.WriteFile(objdir+"/some-file", []byte("abc"), 0666)
-		//olist = append(olist, objdir)
 		return err
 	})
 	if err != nil {
@@ -224,6 +221,7 @@ func TestRefresh(t *testing.T) {
 			t.Fatal(err)
 		}
 		time.Sleep(time.Millisecond * 10)
+		config.TrimNow()
 		if objdir1 != objdir2 {
 			t.Fatalf("failed")
 		}

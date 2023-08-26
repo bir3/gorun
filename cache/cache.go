@@ -18,16 +18,16 @@ import (
 	"time"
 )
 
-// requirements:
-//   - if two or more P race to the same key and one process has started to create entry
-//     but fails before completion, another P will take over the task and complete its
-//   - protect against user error: if cache-dir is set to root '/', delete operation should delete
-//     zero or very few files
-//   - if user creates symlinks in cache dir, delete should only delete symlinks
-//   - out-of-disk space should not corrupt the cache, only fail it
-//		=> need validation of entry data, e.g. guard against truncation
-//   - graceful failure: if locks are no-op, cache should still work mostly ok
-//
+/* requirements:
+    - if two or more P race to the same key and one process has started to create entry
+      but fails before completion, another P will take over the task
+   	- protect against user error: if cache-dir is set to root '/', delete operation should delete
+      zero or very few files
+   	- if user creates symlinks in cache dir, delete should only delete symlinks
+   	- out-of-disk space should not corrupt the cache, only fail it
+      => need validation of entry data, e.g. guard against truncation
+   	- graceful failure: if locks are no-op, cache should still work mostly ok
+*/
 
 func jsonString(m map[string]string) (string, error) {
 
@@ -209,12 +209,12 @@ func (config *Config) Lookup2(input string, userCreate func(outDir string) error
 		return nil
 	}
 	withPartLock := func() error {
-		return UpdateMultiprocess(lockfile, ExclusiveLock, datafile, updateContent)
+		return UpdateMultiprocess(lockfile, EXCLUSIVE_LOCK, datafile, updateContent)
 	}
 	withGlobalLock := func() error {
-		return Lockedfile(config.partLock(hs).lockfile, SharedLock, withPartLock)
+		return Lockedfile(config.partLock(hs).lockfile, SHARED_LOCK, withPartLock)
 	}
-	err = Lockedfile(config.globalLock().lockfile, SharedLock, withGlobalLock)
+	err = Lockedfile(config.globalLock().lockfile, SHARED_LOCK, withGlobalLock)
 	if err != nil {
 		return "/invalid/outdir/2", err
 	}

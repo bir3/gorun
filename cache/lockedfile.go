@@ -18,8 +18,8 @@ import (
 type LockType int
 
 const (
-	SharedLock    LockType = 64
-	ExclusiveLock LockType = 128
+	SHARED_LOCK    LockType = 64
+	EXCLUSIVE_LOCK LockType = 128
 )
 
 func updateDatafile(datafile string, update func(old string, writeString func(new string) error) error) error {
@@ -65,13 +65,13 @@ func updateDatafile(datafile string, update func(old string, writeString func(ne
 
 func UpdateMultiprocess(lockfile string, lockType LockType, datafile string, updateContent func(old string, writeString func(new string) error) error) error {
 	// easier to understand api if lock type is explicit even if only one value allowed
-	if lockType != ExclusiveLock {
+	if lockType != EXCLUSIVE_LOCK {
 		return fmt.Errorf("must specify ExclusiveLock")
 	}
 	f2 := func() error {
 		return updateDatafile(datafile, updateContent)
 	}
-	return Lockedfile(lockfile, ExclusiveLock, f2)
+	return Lockedfile(lockfile, EXCLUSIVE_LOCK, f2)
 }
 
 func Lockedfile(lockfile string, lockType LockType, f func() error) error {
@@ -86,7 +86,7 @@ func Lockedfile(lockfile string, lockType LockType, f func() error) error {
 	if err != nil {
 		return fmt.Errorf("failed to open/create file %s - %w", lockfile, err)
 	}
-	if lockType == SharedLock {
+	if lockType == SHARED_LOCK {
 		err = filelock.RLock(file)
 	} else {
 		err = filelock.Lock(file)

@@ -92,7 +92,7 @@ func (config *Config) updateTrimRefreshTime(checkIfRefreshNeeded bool) (bool, er
 		return nil
 	}
 
-	err := Lockedfile(pair.lockfile, ExclusiveLock, withLock)
+	err := Lockedfile(pair.lockfile, EXCLUSIVE_LOCK, withLock)
 	return updated, err
 }
 
@@ -144,7 +144,7 @@ func (config *Config) deleteExpiredPart(part int) error {
 		return saveError
 	}
 	hash := fmt.Sprintf("%02x", part)
-	return Lockedfile(config.partLock(hash).lockfile, ExclusiveLock, withPartLock)
+	return Lockedfile(config.partLock(hash).lockfile, EXCLUSIVE_LOCK, withPartLock)
 }
 
 func (config *Config) deleteHash(lockfile string) error {

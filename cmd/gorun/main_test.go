@@ -128,8 +128,6 @@ func TestCompileStdin(t *testing.T) {
 	gorun := filepath.Join(cwd, "gorun")
 
 	cmd := exec.Command(gorun, "-")
-	//cmd.Env = append(cmd.Env, ...)
-	//cmd.Env = append(os.Environ(), fmt.Sprintf("PATH=%s:%s", cwd, os.Getenv("PATH")))
 
 	var out bytes.Buffer
 	cmd.Stdin = strings.NewReader(goSimple)
