@@ -107,7 +107,7 @@ func main() {
 		if len(arg) > 2 && strings.HasPrefix(arg, "--") {
 			arg = arg[1:]
 		}
-		if strings.HasPrefix(arg, "-") {
+		if len(arg) > 1 && strings.HasPrefix(arg, "-") {
 			switch arg {
 			case "-h", "-help":
 				help = true

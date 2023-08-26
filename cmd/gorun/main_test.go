@@ -106,6 +106,48 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func TestCompileStdin(t *testing.T) {
+	t.Parallel()
+	goSimple := `#! /usr/bin/env gorun
+
+	package main
+	
+	import "fmt"
+	
+	func main() {
+		fmt.Printf("stdin\n")
+	}`
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// PATH in cmd is not used for executable lookup
+	// => must provide absolute path
+	gorun := filepath.Join(cwd, "gorun")
+
+	cmd := exec.Command(gorun, "-")
+	//cmd.Env = append(cmd.Env, ...)
+	//cmd.Env = append(os.Environ(), fmt.Sprintf("PATH=%s:%s", cwd, os.Getenv("PATH")))
+
+	var out bytes.Buffer
+	cmd.Stdin = strings.NewReader(goSimple)
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+
+	err = cmd.Run()
+	if err != nil {
+		fmt.Println(out.String())
+		t.Fatal(err)
+	}
+	s := out.String()
+	expect := "stdin\n"
+	if s != expect {
+		t.Fatalf("got %s but expected %s", s, expect)
+	}
+}
+
 func TestCompileError(t *testing.T) {
 	t.Parallel()
 	goCompileError := `#! /usr/bin/env gorun
