@@ -23,7 +23,6 @@ func GorunVersion() string {
 	return "0.4"
 }
 
-
 func readFileAndStrip(filename string) string {
 	var s string
 	if filename == "-" {
