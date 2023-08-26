@@ -142,10 +142,10 @@ func TestCmdlineArgs(t *testing.T) {
 	
 	func main() {
 	   if len(os.Args) > 1 {
-		   fmt.Printf("a1=%s\n", os.Args[1])
+		   fmt.Printf("arg1=%s\n", os.Args[1])
 	   }
 	   if len(os.Args) > 2 {
-		   fmt.Printf("a2=%s\n", os.Args[2])
+		   fmt.Printf("arg2=%s\n", os.Args[2])
 	   }
 	   fmt.Printf("env A=%s\n", os.Getenv("A"))
 	}
@@ -156,12 +156,12 @@ func TestCmdlineArgs(t *testing.T) {
 		t.Errorf("exe failed - %s", err)
 		return
 	}
-	if !strings.Contains(s, `a1=900`) {
+	if !strings.Contains(s, `arg1=900`) {
 		fmt.Printf("s=%s", s)
 		t.Errorf("arg1 not found")
 		return
 	}
-	if !strings.Contains(s, `A=700`) {
+	if !strings.Contains(s, `env A=700`) {
 		t.Errorf("env not found")
 		return
 	}
@@ -181,7 +181,7 @@ func TestExecString(t *testing.T) {
 	}
 	if !strings.Contains(string(buf), `RunString OK`) {
 		fmt.Printf("output buf=%s", string(buf))
-		t.Errorf("missing magic string fro")
+		t.Errorf("missing magic string")
 		return
 	}
 

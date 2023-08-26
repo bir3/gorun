@@ -3,12 +3,15 @@ package cache
 import (
 	"bytes"
 	"encoding/base64"
+	"flag"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -58,8 +61,77 @@ explore: CCT testing
 	https://wcventure.github.io/pdf/ICSE2022_PERIOD.pdf
 */
 
+type arrayFlags []string
+
+func (i *arrayFlags) String() string {
+	return "my string representation"
+}
+
+func (i *arrayFlags) Set(value string) error {
+	*i = append(*i, value)
+	return nil
+}
+
+func TestMain(m *testing.M) {
+	var items arrayFlags
+
+	flag.Var(&items, "i", "key=value item - can specify multiple times")
+
+	get := func(key string) string {
+		result := ""
+		for _, item := range items {
+			k, v, found := strings.Cut(item, "=")
+			if !found {
+				panic(fmt.Sprintf("item missing '=' : %s", item))
+			}
+			if key == k {
+				result = v // last key wins
+				prefix := "data:text/plain;base64,"
+				if strings.HasPrefix(result, prefix) {
+					buf, err := base64.StdEncoding.DecodeString(result[len(prefix):])
+					if err != nil {
+						panic(err)
+					}
+					result = string(buf)
+				}
+			}
+		}
+		return result
+	}
+
+	// In some build systems, notably Blaze, flag.Parse is called before TestMain,
+	// in violation of the TestMain contract, making this second call a no-op.
+	flag.Parse()
+	switch get("func") {
+	case "":
+		status := m.Run()
+		if status == 0 {
+			//err := _cleanTmpDir()
+			var err error
+			if err != nil {
+				fmt.Printf("ERROR: %s\n", err)
+				status = 18
+			}
+		}
+		os.Exit(status) // normal case
+	case "lookupSubprocess":
+		lookupSubprocess(get("id"), get("delay"), get("tmp"))
+		/*
+			case "deleteSubprocess":
+				deleteSubprocess(*testId, *testDelay, *testExpire, createMap(*testMap))
+			case "onceSubprocess":
+				onceSubprocess(*testId, createMap(*testMap))
+		*/
+	default:
+		log.Fatalf("unknown func %s", get("func"))
+	}
+}
+
 func str2base64(s string) string {
 	return base64.StdEncoding.EncodeToString([]byte(s))
+}
+func str2base64v2(s string) string {
+	return "data:text/plain;base64," + base64.StdEncoding.EncodeToString([]byte(s))
 }
 
 func template2str(templateString string, m map[string]any) string {
@@ -184,25 +256,59 @@ func TestLookup(t *testing.T) {
 	t.Parallel()
 
 	d := t.TempDir()
-	m := map[string]any{"tmpdir64": str2base64(d)}
+	m := map[string]any{"tmp": str2base64v2(d)}
 
 	testLookup(t, template2str(`
-		{{$.exe}} --entry=lookupSubprocess --map=tmpdir64={{$.tmpdir64}}
-		{{$.exe}} --entry=lookupSubprocess --map=tmpdir64={{$.tmpdir64}}
-		{{$.exe}} --entry=lookupSubprocess --map=tmpdir64={{$.tmpdir64}}
+		{{$.exe}} -i func=lookupSubprocess -i tmp={{$.tmp}}
+		{{$.exe}} -i func=lookupSubprocess -i tmp={{$.tmp}}
+		{{$.exe}} -i func=lookupSubprocess -i tmp={{$.tmp}}
 		`, m))
 
 }
 
-func createObj(config *Config, hashOfInput string) {
-	_, _ = config.Lookup(hashOfInput, func(objdir string) error {
-		err := os.WriteFile(objdir+"/some-"+hashOfInput+"-file", []byte(hashOfInput+hashOfInput), 0666)
-		if err != nil {
-			panic(err)
-		}
-		log.Printf("create file\n")
+func lookupSubprocess(id string, delay string, cacheDir string) {
+	fmt.Printf("lookupTest id=%s\n", id)
+	//cacheDir := get(m, "tmpdir64")
+
+	config, err := NewConfig(cacheDir, 10*time.Second)
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(8)
+	}
+	/*
+		config.testLog = id
+		config.testDelayMs = make(map[string]int)
+		config.setDelay(delay)
+	*/
+	found := true
+	create := func(outdir string) error {
+		found = false
 		return nil
-	})
+	}
+	objDir, err := config.Lookup("a7a7", create)
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(8)
+	}
+	if !filepath.IsAbs(objDir) {
+		panic(fmt.Sprintf("Lookup did not return abs path, got objDir=%s", objDir))
+	}
+	if found {
+		fmt.Println("FOUND")
+		/*
+			f := filepath.Join(objDir, "data.txt")
+			b, err := os.ReadFile(f)
+			if err != nil {
+				panic(fmt.Sprintf("read cache object failed, file %s error %s", f, err.Error()))
+			}
+			if string(b) != "abc" {
+				panic(fmt.Sprintf("read cache object did not return expected data %q but got %q", "abc", string(b)))
+			}
+		*/
+	} else {
+		fmt.Println("NEW")
+	}
+	fmt.Println("objDir", objDir)
 }
 
 func expectCountFiles(t *testing.T, dir string, prefix string, n int) {
@@ -212,21 +318,43 @@ func expectCountFiles(t *testing.T, dir string, prefix string, n int) {
 	}
 }
 
+func countFiles(d string, prefix string) int {
+	fileSystem := os.DirFS(d)
+	n := 0
+	err := fs.WalkDir(fileSystem, ".", func(fspath string, entry fs.DirEntry, err error) error {
+		if entry.Type().IsRegular() && strings.HasPrefix(entry.Name(), prefix) {
+			n++
+		}
+		return err
+	})
+	if err != nil {
+		panic(err)
+	}
+	return n
+}
+
 func Create2(d string, maxAge time.Duration, _ bool) (*Config, error) {
 	return NewConfig(d, maxAge)
 }
 
-func TestBasic(t *testing.T) {
+func TestInternals(t *testing.T) {
+	// internal sanity checks
+
+	// verify refresh
 	var obj Item
 	obj.refresh()
 	if obj.age() > time.Second*10 {
 		t.Fatal("fresh object should not be old")
+	}
+	if obj.age() < 0 {
+		t.Fatal("negative age")
 	}
 	config, err := newConfig(t.TempDir(), time.Millisecond*200)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	// minimal sanity of hash
 	for i := 0; i < 1000; i++ {
 		hash := hashString(fmt.Sprintf("%d", i))
 		d1 := config.partPrefixFromHash(hash)
@@ -272,6 +400,17 @@ func TestDelete(t *testing.T) {
 
 }
 
+func createObj(config *Config, hashOfInput string) {
+	_, _ = config.Lookup(hashOfInput, func(objdir string) error {
+		err := os.WriteFile(objdir+"/some-"+hashOfInput+"-file", []byte(hashOfInput+hashOfInput), 0666)
+		if err != nil {
+			panic(err)
+		}
+		log.Printf("create file\n")
+		return nil
+	})
+}
+
 type CmdResult struct {
 	id  int
 	out string
@@ -293,11 +432,108 @@ func validLine(s string) bool {
 	return s != "" && !strings.HasPrefix(s, "#")
 }
 
+func shellsplit(s string) []string {
+	// split string on whitespace but quote aware
+	// - useful for subprocess invocation
+	// note: we assume quotes are balanced
+	s = strings.TrimSpace(s)
+	isQuote := func(x byte) bool {
+		return x == '\'' || x == '"'
+	}
+	isSpace := func(x byte) bool {
+		return x == '\t' || x == ' '
+	}
+	var q byte
+	q = '.' // = not set
+	// simple quote aware split
+
+	var begin int = -1 // not field found
+	out := []string{}
+	addfield := func(s string) {
+		if len(s) > 1 && isQuote(s[0]) && isQuote(s[len(s)-1]) {
+			s = s[1 : len(s)-1]
+		}
+		out = append(out, s)
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if q == '.' {
+			if isQuote(c) {
+				q = c
+			}
+		} else if q == c {
+			q = '.'
+		}
+		space := q == '.' && isSpace(c)
+
+		if begin < 0 {
+			if !space {
+				begin = i
+			}
+		} else {
+			if space {
+				// field found
+				addfield(s[begin:i])
+				begin = -1
+			}
+		}
+	}
+	if begin >= 0 {
+		addfield(s[begin:])
+	}
+	return out
+}
+
+func TestShellsplit(t *testing.T) {
+	type Example struct {
+		input  string
+		expect []string
+	}
+	examples := []Example{
+		{"", []string{}},
+		{" ", []string{}},
+		{"   ", []string{}},
+		{" a ", []string{"a"}},
+		{"  a  ", []string{"a"}},
+		{"a b", []string{"a", "b"}},
+		{"a 'b ' c", []string{"a", "b ", "c"}},
+		{`a "b " c`, []string{"a", "b ", "c"}},
+	}
+	for _, x := range examples {
+		actual := shellsplit(x.input)
+		if slices.Compare(actual, x.expect) != 0 {
+			t.Fatalf("input %s - expected %s but got %s", x.input, x.expect, actual)
+		}
+	}
+}
+
+/*
+run a list of processes in parallel and return the output (stdout+stderr)
+as list of strings, in the same order as submitted, example:
+
+pspec="
+python3 -c 'print(4)'
+python3 -c 'print(5)'
+"
+
+returns ["4\n", "5\n"]
+*/
+
+func TestProcesslist(t *testing.T) {
+	out := runProcessList(t, `
+	python3 -c 'import time; time.sleep(0.1); print(4)'
+	python3 -c 'print(5)'
+		`)
+	expect := []string{"4\n", "5\n"}
+	if slices.Compare(out, expect) != 0 {
+		t.Fatalf("unexpected output %s", out)
+	}
+}
+
 func runProcessList(t *testing.T, pspec string) []string {
 	resList := runProcessList2(t, pspec)
 	var out []string
 	for _, res := range resList {
-		fmt.Println("*** res", res.err)
 		if res.err != nil {
 			t.Fatalf("runPspec failed: %v %d\n##\n%s ##", res.err, len(res.out), res.out)
 		}
@@ -313,9 +549,9 @@ func runProcessList2(t *testing.T, pspec string) []CmdResult {
 	for k := 0; k < nproc; k++ {
 		k := k
 		go func() {
-			args := strings.Fields(plines[k])
-			args = append(args, "--id")
-			args = append(args, fmt.Sprintf("%d", k))
+			args := shellsplit(plines[k])
+			args = append(args, "-i")
+			args = append(args, fmt.Sprintf("id=%d", k))
 			cmd := exec.Command(args[0], args[1:]...) //exe, args...)
 			out, err := cmd.CombinedOutput()
 			rx <- CmdResult{k, string(out), err}

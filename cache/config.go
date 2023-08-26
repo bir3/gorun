@@ -128,8 +128,8 @@ func NewConfig(dir string, maxAge time.Duration) (*Config, error) {
 }
 
 func newConfig(dir string, maxAge time.Duration) (*Config, error) {
-	if maxAge < 1*time.Millisecond {
-		return nil, fmt.Errorf("internal maxAge minimum is 1 millisecond")
+	if maxAge < 10*time.Millisecond {
+		return nil, fmt.Errorf("internal maxAge minimum is 10 milliseconds")
 	}
 
 	if !utf8.Valid([]byte(dir)) {
