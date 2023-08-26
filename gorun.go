@@ -18,7 +18,8 @@ type CompileError struct {
 }
 
 func (c *CompileError) Error() string {
-	return fmt.Sprintf("stdout:\n%s\nstderr:%s\nerr: %s", c.Stdout, c.Stderr, c.Err)
+	//return fmt.Sprintf("stdout:\n%s\nstderr:\n%s\nERROR: %s\n", c.Stdout, c.Stderr, c.Err)
+	return fmt.Sprintf("%s%s\nERROR: %s\n", c.Stdout, c.Stderr, c.Err)
 }
 
 func compile(c *cache.Config, srcfile string, exefile string) error {
@@ -54,14 +55,9 @@ func compile(c *cache.Config, srcfile string, exefile string) error {
 
 func show(outdir string, inputPart string) {
 	exe, _ := os.Executable()
-	fmt.Printf("// cd %s\n", outdir)
-	fmt.Printf("// GOCOMPILER_TOOL=go %s build\n", exe)
-	fmt.Printf("%s\n", inputPart)
-	buf, err := os.ReadFile(fmt.Sprintf("%s/go.mod", outdir))
-	if err == nil {
-		fmt.Printf("// go.mod:\n")
-		fmt.Printf("%s\n", string(buf))
-	}
+	fmt.Printf("# how to compile manually:\n")
+	fmt.Printf(" cd %s\n", outdir)
+	fmt.Printf(" GOCOMPILER_TOOL=go %s build\n", exe)
 }
 
 type RunInfo struct {

@@ -127,15 +127,17 @@ func validateLine(line string) {
 	}
 }
 
-func template2str(templateString string, m map[string]any) string {
+func template2str(t *testing.T, templateString string, m map[string]string) string {
 	exe, err := os.Executable()
 	if err != nil {
 		panic(fmt.Sprintf("can't find file name of executable: %s", err))
 	}
 	if m == nil {
-		m = make(map[string]any)
+		m = make(map[string]string)
 	}
+	d := t.TempDir()
 	m["exe"] = exe
+	m["tmp"] = str2base64(d)
 
 	var buffer = new(bytes.Buffer)
 	template.Must(template.New("").Parse(templateString)).Execute(buffer, m)
@@ -150,7 +152,9 @@ func TestCache(t *testing.T) {
 	cacheDir := t.TempDir()
 
 	//testTime := time.Now() // we control the clock now
-	config, err := Create2(cacheDir, time.Second*30, false)
+
+	config, err := newConfig(cacheDir, time.Millisecond*30)
+
 	//config.testTime = &testTime //timeNow = func() time.Time { return testTime }
 
 	if err != nil {
@@ -186,9 +190,23 @@ func TestRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create cache %s", err)
 	}
-	olist := make([]string, 0, 100) // high capacity so we can pass by reference
+	//olist := make([]string, 0, 100) // high capacity so we can pass by reference
 
-	objdir1 := newEntry(t, config, "bb", olist)
+	//objdir1 := newEntry(t, config, "bb", olist)
+	var isNew bool
+	objdir1, err := config.Lookup("bb", func(objdir string) error {
+		isNew = true
+		err := os.WriteFile(objdir+"/some-file", []byte("abc"), 0666)
+		//olist = append(olist, objdir)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isNew {
+		t.Fatalf("missing create")
+	}
+
 	time.Sleep(time.Millisecond * 10)
 
 	// verify repeated lookups keep item alive past normal expire
@@ -245,23 +263,78 @@ func newEntry(t *testing.T, config *Config, hashOfInput string, olist []string) 
 	return objdir2
 }
 
+func TestHash(t *testing.T) {
+	if os.Getenv("GORUN_HASH") == "" {
+		t.Skip()
+	}
+	input := os.Getenv("GORUN_HASH")
+	inputHash := hashString(input)[0:2]
+	fmt.Printf("%s has hash %s\n", input, inputHash)
+	// find short string that has same hash prefix
+	// as another string
+	limit := 10
+	for i := 0; i < 256*100; i++ {
+		n := i
+		s := ""
+		for n > 0 {
+			ch := 'a' + (n % 26)
+			n = n / 26
+			s = fmt.Sprintf("%s%c", s, ch)
+		}
+		hs := hashString(s)
+		if hs[0:2] == inputHash {
+			fmt.Printf("%s has same hash %s @ %d\n", s, hs[0:2], i)
+			limit -= 1
+			if limit == 0 {
+				break
+			}
+		}
+
+	}
+}
 func TestLookup(t *testing.T) {
+	// test basic cache lookup
 	t.Parallel()
 
-	d := t.TempDir()
-	m := map[string]any{"tmp": str2base64(d)}
-
-	out := runProcessList(t, template2str(`
+	out := runProcessList(t, template2str(t, `
 		{{$.exe}} func=lookup key=a startDelay=0ms  createDelay=0ms tmp={{$.tmp}}
 		{{$.exe}} func=lookup key=a startDelay=50ms createDelay=0ms tmp={{$.tmp}}
 		{{$.exe}} func=lookup key=a startDelay=50ms createDelay=0ms tmp={{$.tmp}}
-		`, m))
+		`, nil))
+
 	s := strings.Join(out, ",")
 	expect := "NEW,FOUND,FOUND"
 	if s != expect {
 		t.Fatalf("got %s but expected %s", s, expect)
 	}
 }
+
+func TestLookup2(t *testing.T) {
+	// test basic cache lookup
+	t.Parallel()
+	// GORUN_HASH=aa make hash # shows key=pm hash same hash prefix
+
+	t1 := time.Now()
+	out := runProcessList(t, template2str(t, `
+		{{$.exe}} func=lookup key=aa startDelay=0ms   createDelay=150ms tmp={{$.tmp}}
+		{{$.exe}} func=lookup key=pm startDelay=50ms  createDelay=100ms tmp={{$.tmp}}
+		{{$.exe}} func=lookup key=aa startDelay=100ms  createDelay=0ms  tmp={{$.tmp}}
+		`, nil))
+	dt := time.Since(t1).Abs()
+
+	// verify that two concurrent create objects do not block each other
+	if dt > time.Millisecond*200 {
+		// if concurrent, we expect 150ms
+		// else 250ms
+		t.Fatalf("cache too slow: %s", dt)
+	}
+	s := strings.Join(out, ",")
+	expect := "NEW,NEW,FOUND"
+	if s != expect {
+		t.Fatalf("got %s but expected %s", s, expect)
+	}
+}
+
 func lookup(line, key string, startDelay, createDelay time.Duration, cacheDir string) {
 	// runs in a separate subprocess
 
@@ -280,7 +353,7 @@ func lookup(line, key string, startDelay, createDelay time.Duration, cacheDir st
 		time.Sleep(createDelay)
 		return nil
 	}
-	objDir, err := config.Lookup("a7a7", create)
+	objDir, err := config.Lookup(key, create)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(8)
