@@ -191,7 +191,7 @@ func newConfig(dir string, maxAge time.Duration) (*Config, error) {
 	}
 
 	g := config.globalLock()
-	err := UpdateMultiprocess(g.lockfile, g.datafile, updateContent)
+	err := UpdateMultiprocess(g.lockfile, ExclusiveLock, g.datafile, updateContent)
 	if err != nil {
 		return nil, err
 	}

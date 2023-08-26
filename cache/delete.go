@@ -50,7 +50,7 @@ func (config *Config) trimPending() bool {
 	}
 }
 
-func (config *Config) DeleteExpiredItems() error {
+func (config *Config) TrimPeriodically() error {
 
 	if !config.trimPending() {
 		return nil // fast common path (no lock)
@@ -96,7 +96,7 @@ func (config *Config) TrimNow() error {
 	var saveError error
 
 	for k := 0; k < 256; k++ {
-		err := config.DeleteExpiredPart(k)
+		err := config.deleteExpiredPart(k)
 		if err != nil && saveError == nil {
 			saveError = err
 		}
@@ -111,7 +111,7 @@ func (config *Config) TrimNow() error {
 
 }
 
-func (config *Config) DeleteExpiredPart(part int) error {
+func (config *Config) deleteExpiredPart(part int) error {
 	// we run under an exclusive lock on our part of the cache
 
 	withPartLock := func() error {
@@ -131,7 +131,7 @@ func (config *Config) DeleteExpiredPart(part int) error {
 		// and file could be deleted before we lock (partLock here prevents that)
 		var saveError error
 		for _, lockfile := range flist {
-			err = config.DeleteHash(lockfile)
+			err = config.deleteHash(lockfile)
 
 			if err != nil {
 				saveError = fmt.Errorf("error during delete of %s : %s", lockfile, err)
@@ -143,7 +143,7 @@ func (config *Config) DeleteExpiredPart(part int) error {
 	return Lockedfile(config.partLock(hash).lockfile, ExclusiveLock, withPartLock)
 }
 
-func (config *Config) DeleteHash(lockfile string) error {
+func (config *Config) deleteHash(lockfile string) error {
 	datafile := lockfile2datafile(lockfile)
 
 	buf, err := os.ReadFile(datafile)

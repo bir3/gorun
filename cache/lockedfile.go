@@ -59,7 +59,11 @@ func updateDatafile(datafile string, update func(old string, writeString func(ne
 	return nil
 }
 
-func UpdateMultiprocess(lockfile string, datafile string, updateContent func(old string, writeString func(new string) error) error) error {
+func UpdateMultiprocess(lockfile string, lockType LockType, datafile string, updateContent func(old string, writeString func(new string) error) error) error {
+	// easier to understand api if lock type is explicit even if only one value allowed
+	if lockType != ExclusiveLock {
+		return fmt.Errorf("must specify ExclusiveLock")
+	}
 	f2 := func() error {
 		return updateDatafile(datafile, updateContent)
 	}

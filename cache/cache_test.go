@@ -3,7 +3,6 @@ package cache
 import (
 	"bytes"
 	"encoding/base64"
-	"flag"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -61,77 +60,71 @@ explore: CCT testing
 	https://wcventure.github.io/pdf/ICSE2022_PERIOD.pdf
 */
 
-type arrayFlags []string
-
-func (i *arrayFlags) String() string {
-	return "my string representation"
-}
-
-func (i *arrayFlags) Set(value string) error {
-	*i = append(*i, value)
-	return nil
-}
-
 func TestMain(m *testing.M) {
-	var items arrayFlags
 
-	flag.Var(&items, "i", "key=value item - can specify multiple times")
-
-	get := func(key string) string {
-		result := ""
-		for _, item := range items {
-			k, v, found := strings.Cut(item, "=")
-			if !found {
+	get0 := func(key string) (value string, found bool) {
+		for _, item := range os.Args[1:] {
+			k, v, ok := strings.Cut(item, "=")
+			if !ok {
 				panic(fmt.Sprintf("item missing '=' : %s", item))
 			}
 			if key == k {
-				result = v // last key wins
+				found = true
+				value = v // last key wins
 				prefix := "data:text/plain;base64,"
-				if strings.HasPrefix(result, prefix) {
-					buf, err := base64.StdEncoding.DecodeString(result[len(prefix):])
+				if strings.HasPrefix(v, prefix) {
+					buf, err := base64.StdEncoding.DecodeString(v[len(prefix):])
 					if err != nil {
 						panic(err)
 					}
-					result = string(buf)
+					value = string(buf)
 				}
 			}
 		}
-		return result
+		return value, found
 	}
 
-	// In some build systems, notably Blaze, flag.Parse is called before TestMain,
-	// in violation of the TestMain contract, making this second call a no-op.
-	flag.Parse()
-	switch get("func") {
-	case "":
-		status := m.Run()
-		if status == 0 {
-			//err := _cleanTmpDir()
-			var err error
-			if err != nil {
-				fmt.Printf("ERROR: %s\n", err)
-				status = 18
-			}
+	get := func(key string) string {
+		value, found := get0(key)
+		if !found {
+			panic(fmt.Sprintf("key %s not found in commandline: %s", key, strings.Join(os.Args, " ")))
 		}
-		os.Exit(status) // normal case
-	case "lookupSubprocess":
-		lookupSubprocess(get("id"), get("delay"), get("tmp"))
-		/*
-			case "deleteSubprocess":
-				deleteSubprocess(*testId, *testDelay, *testExpire, createMap(*testMap))
-			case "onceSubprocess":
-				onceSubprocess(*testId, createMap(*testMap))
-		*/
+		return value
+	}
+
+	getDuration := func(key string) time.Duration {
+		d, err := time.ParseDuration(get(key)) // examples: 5s  100ms
+		if err != nil {
+			panic(err)
+		}
+		if d != 0 && d < time.Millisecond {
+			panic("minimum duration is 1ms except for zero duration")
+		}
+		return d
+	}
+
+	found := len(os.Args) > 1 && strings.HasPrefix(os.Args[1], "func=")
+
+	if !found {
+		os.Exit(m.Run()) // Go tests
+	}
+	switch get("func") {
+	case "lookup":
+		lookup(get("line"), get("key"), getDuration("startDelay"), getDuration("createDelay"), get("tmp"))
 	default:
 		log.Fatalf("unknown func %s", get("func"))
 	}
 }
 
 func str2base64(s string) string {
-	return base64.StdEncoding.EncodeToString([]byte(s))
-}
-func str2base64v2(s string) string {
 	return "data:text/plain;base64," + base64.StdEncoding.EncodeToString([]byte(s))
+}
+
+func validateLine(line string) {
+	_, err := strconv.Atoi(line)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func template2str(templateString string, m map[string]any) string {
@@ -256,33 +249,35 @@ func TestLookup(t *testing.T) {
 	t.Parallel()
 
 	d := t.TempDir()
-	m := map[string]any{"tmp": str2base64v2(d)}
+	m := map[string]any{"tmp": str2base64(d)}
 
-	testLookup(t, template2str(`
-		{{$.exe}} -i func=lookupSubprocess -i tmp={{$.tmp}}
-		{{$.exe}} -i func=lookupSubprocess -i tmp={{$.tmp}}
-		{{$.exe}} -i func=lookupSubprocess -i tmp={{$.tmp}}
+	out := runProcessList(t, template2str(`
+		{{$.exe}} func=lookup key=a startDelay=0ms  createDelay=0ms tmp={{$.tmp}}
+		{{$.exe}} func=lookup key=a startDelay=50ms createDelay=0ms tmp={{$.tmp}}
+		{{$.exe}} func=lookup key=a startDelay=50ms createDelay=0ms tmp={{$.tmp}}
 		`, m))
-
+	s := strings.Join(out, ",")
+	expect := "NEW,FOUND,FOUND"
+	if s != expect {
+		t.Fatalf("got %s but expected %s", s, expect)
+	}
 }
+func lookup(line, key string, startDelay, createDelay time.Duration, cacheDir string) {
+	// runs in a separate subprocess
 
-func lookupSubprocess(id string, delay string, cacheDir string) {
-	fmt.Printf("lookupTest id=%s\n", id)
-	//cacheDir := get(m, "tmpdir64")
-
+	validateLine(line) // line starts at "0", "1", ...
 	config, err := NewConfig(cacheDir, 10*time.Second)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(8)
 	}
-	/*
-		config.testLog = id
-		config.testDelayMs = make(map[string]int)
-		config.setDelay(delay)
-	*/
+
+	time.Sleep(startDelay)
+
 	found := true
 	create := func(outdir string) error {
 		found = false
+		time.Sleep(createDelay)
 		return nil
 	}
 	objDir, err := config.Lookup("a7a7", create)
@@ -294,21 +289,10 @@ func lookupSubprocess(id string, delay string, cacheDir string) {
 		panic(fmt.Sprintf("Lookup did not return abs path, got objDir=%s", objDir))
 	}
 	if found {
-		fmt.Println("FOUND")
-		/*
-			f := filepath.Join(objDir, "data.txt")
-			b, err := os.ReadFile(f)
-			if err != nil {
-				panic(fmt.Sprintf("read cache object failed, file %s error %s", f, err.Error()))
-			}
-			if string(b) != "abc" {
-				panic(fmt.Sprintf("read cache object did not return expected data %q but got %q", "abc", string(b)))
-			}
-		*/
+		fmt.Printf("FOUND")
 	} else {
-		fmt.Println("NEW")
+		fmt.Printf("NEW")
 	}
-	fmt.Println("objDir", objDir)
 }
 
 func expectCountFiles(t *testing.T, dir string, prefix string, n int) {
@@ -384,7 +368,7 @@ func TestDelete(t *testing.T) {
 	}
 	createObj(config, "aa")
 	createObj(config, "bb")
-	config.DeleteExpiredItems()
+	config.TrimPeriodically()
 	expectCountFiles(t, d, "some-", 2)
 
 	time.Sleep(210 * time.Millisecond) // all objects expired by now
@@ -392,7 +376,7 @@ func TestDelete(t *testing.T) {
 
 	createObj(config, "bb")
 
-	config.DeleteExpiredItems()
+	config.TrimPeriodically()
 
 	log.Printf("*** after wait\n")
 
@@ -550,8 +534,9 @@ func runProcessList2(t *testing.T, pspec string) []CmdResult {
 		k := k
 		go func() {
 			args := shellsplit(plines[k])
-			args = append(args, "-i")
-			args = append(args, fmt.Sprintf("id=%d", k))
+			if len(args) > 1 && strings.HasPrefix(args[1], "func=") {
+				args = append(args, fmt.Sprintf("line=%d", k))
+			}
 			cmd := exec.Command(args[0], args[1:]...) //exe, args...)
 			out, err := cmd.CombinedOutput()
 			rx <- CmdResult{k, string(out), err}
@@ -569,89 +554,4 @@ func runProcessList2(t *testing.T, pspec string) []CmdResult {
 	}
 
 	return out
-}
-
-func testLookup(t *testing.T, pspec string) []string {
-	debugPrintTrace := false
-
-	slist := runProcessList(t, pspec)
-	verify_NEW_FOUND_count(t, slist)
-
-	addEvents(slist)
-
-	if debugPrintTrace {
-		printList(slist)
-		fmt.Println("# ok")
-	}
-
-	return slist
-}
-
-func printList(slist []string) {
-	for _, s := range slist {
-		fmt.Println(s)
-		fmt.Println("===")
-	}
-}
-
-func verify_NEW_FOUND_count(t *testing.T, slist []string) {
-	nproc := len(slist)
-	m := make(map[string]int)
-	for _, s := range slist {
-		n := 0
-		for _, line := range strings.Split(s, "\n") {
-			switch line {
-			case "NEW":
-				fallthrough
-			case "FOUND":
-				m[line] = m[line] + 1
-				n += 1
-			}
-		}
-		if n != 1 {
-			t.Fatalf("expected only one of NEW or FOUND, got %d events", n)
-		}
-	}
-	if m["NEW"] != 1 {
-		t.Fatalf("expected only one NEW event, got %d", m["NEW"])
-	}
-	if m["NEW"]+m["FOUND"] != nproc {
-		t.Fatalf("result mismatch %d + %d != %d", m["NEW"], m["FOUND"], nproc)
-	}
-}
-
-func hasLine(res string, x string) bool {
-	for _, line := range strings.Split(res, "\n") {
-		if line == x {
-			return true
-		}
-	}
-	return false
-}
-
-func addEvents(rlist []string) {
-	//
-	// when we create file with os.O_CREATE we (the caller) can't know if the file
-	// was found or if we created it (when many processes P are racing)
-	// however, if we first check if the file exists, then we can deduce what P created it
-	// if all P say 'lockfile exists' except one => we can say the remaining P must have created the file
-	//
-	nfound := 0
-	k := -1
-	for i, res := range rlist {
-		if hasLine(res, "lockfile exists") {
-			nfound += 1
-		} else {
-			k = i
-		}
-	}
-	if nfound == len(rlist)-1 {
-		s := rlist[k]
-		k2 := strings.Index(s, "\n")
-		if k2 > 0 {
-			rlist[k] = s[0:k2+1] + "lockfile created\n" + s[k2+1:]
-		} else {
-			rlist[k] = "lockfile created\n" + s
-		}
-	}
 }

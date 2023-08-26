@@ -156,7 +156,7 @@ func (config *Config) Lookup2(input string, userCreate func(outDir string) error
 	lockfile := pair.lockfile
 	datafile := pair.datafile
 
-	err := ensureDir(pair.dir())
+	err := mkdirAllRace(pair.dir())
 	if err != nil {
 		return "/invalid/outdir/1", fmt.Errorf("failed to create prefix dir %q - %w", pair.dir(), err)
 	}
@@ -205,7 +205,7 @@ func (config *Config) Lookup2(input string, userCreate func(outDir string) error
 		return nil
 	}
 	withPartLock := func() error {
-		return UpdateMultiprocess(lockfile, datafile, updateContent)
+		return UpdateMultiprocess(lockfile, ExclusiveLock, datafile, updateContent)
 	}
 	withGlobalLock := func() error {
 		return Lockedfile(config.partLock(hs).lockfile, SharedLock, withPartLock)

@@ -122,9 +122,10 @@ func ExecString(c *cache.Config, goCode string, args []string, info RunInfo) err
 	})
 
 	if createCalled {
-		// no cached hit, e.g. we are already on a slow path
-		// => ok to check if cache trim should occur
-		//c.TrimCachePeriodically()
+		// create item called (e.g. no cached item found)
+		// => we are already on a slow path
+		// => check if cache trim should occur
+		c.TrimPeriodically()
 	}
 
 	if err != nil {
