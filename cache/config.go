@@ -176,7 +176,7 @@ func newConfig(dir string, maxAge time.Duration) (*Config, error) {
 
 			return writeString(final)
 		} else {
-			// ignore maxAge - use existing config.json
+			// ignore maxAge value - read from config.json
 			err = json.Unmarshal([]byte(old), &m)
 			if err != nil {
 				return err

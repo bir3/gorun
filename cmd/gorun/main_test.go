@@ -18,34 +18,25 @@ import (
 	"github.com/bir3/gorun/cache"
 )
 
-func ensureDir(dir string) {
-	// assume many will race here
-	// => only care that result is a dir
-	_, err := os.Stat(dir)
-	if err != nil {
-		os.Mkdir(dir, 0755)
-	}
-}
-
 func tmpdir(t *testing.T) string {
 
 	d := os.Getenv("GORUN_TESTDIR")
 	if d != "" {
-		ensureDir(d)
+
+		os.Mkdir(d, 0777) // assume many will race, so ignore error
 		return d
 	}
 	return t.TempDir()
 }
 
 func gorunTest(t *testing.T, gofilename string, code string, args []string, extraEnv string) (string, error) {
-	// gofilename is actually .go file with #! /usr/bin/env gorun
+	// gofilename is actually a .go file with #! /usr/bin/env gorun
 	dx := filepath.Dir(gofilename)
 	if dx != "" && dx != "." {
 		panic(fmt.Sprintf("bad gofilename: %s - dir = %s", gofilename, dx))
 	}
 	exefile := filepath.Join(tmpdir(t), gofilename)
 
-	// write file and make executable
 	err := os.WriteFile(exefile, []byte(code), 0777)
 	if err != nil {
 		return "", err
@@ -123,7 +114,7 @@ func TestCompileStdin(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// PATH in cmd is not used for executable lookup
+	// setting PATH Env in cmd is not used for executable lookup
 	// => must provide absolute path
 	gorun := filepath.Join(cwd, "gorun")
 
@@ -165,10 +156,10 @@ func TestCompileError(t *testing.T) {
 		return
 	}
 
-	if strings.Contains(s, `"fmt" imported and not used`) {
-		return // pass
+	if !strings.Contains(s, `"fmt" imported and not used`) {
+		t.Errorf("expected error message, got=%s", s)
 	}
-	t.Errorf("expected error message, got=%s", s)
+
 }
 
 func TestCmdlineArgs(t *testing.T) {

@@ -22,7 +22,6 @@ type CompileError struct {
 }
 
 func (c *CompileError) Error() string {
-	//return fmt.Sprintf("stdout:\n%s\nstderr:\n%s\nERROR: %s\n", c.Stdout, c.Stderr, c.Err)
 	return fmt.Sprintf("%s%s\nERROR: %s\n", c.Stdout, c.Stderr, c.Err)
 }
 
@@ -81,22 +80,14 @@ func ExecString(c *cache.Config, goCode string, args []string, info RunInfo) err
 	input += "//\n"
 	input += fmt.Sprintf("%s\n", goCode)
 
-	showDone := info.ShowFlag
+	showPending := info.ShowFlag
 	show := func(outdir string) {
-		if showDone {
+		if showPending {
 			show(outdir, input[0:strings.Index(input, "\n//\n")])
-			showDone = false
+			showPending = false
 		}
 	}
 
-	// TODO: if periodic cleanup time has arrived
-	// take exclusive lock on Lookup
-	// but only execute cleanup if create() called
-	// => and exclude current item from deletion
-	// => we can hope to execute delete with zero time impact
-	// for the user
-	// downside: we will hold an exclusive locks during this time
-	// hmm, can we execute cache hit without lock to minimize impact ?
 	createCalled := false
 	outdir, err := c.Lookup(input, func(outdir string) error {
 
@@ -106,7 +97,6 @@ func ExecString(c *cache.Config, goCode string, args []string, info RunInfo) err
 			gofile := filepath.Join(outdir, "main.go")
 			exefile := filepath.Join(outdir, "main")
 
-			// write main.go
 			err := os.WriteFile(gofile, []byte(goCode), 0666)
 			if err != nil {
 				return fmt.Errorf("failed to write %s - %w", gofile, err)
@@ -121,11 +111,11 @@ func ExecString(c *cache.Config, goCode string, args []string, info RunInfo) err
 		return err
 	})
 
-	if createCalled {
-		// create item called (e.g. no cached item found)
+	if err == nil && createCalled {
+		// create item called (no cached item found)
 		// => we are already on a slow path
 		// => check if cache trim should occur
-		c.TrimPeriodically()
+		err = c.TrimPeriodically()
 	}
 
 	if err != nil {

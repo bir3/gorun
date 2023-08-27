@@ -64,6 +64,18 @@ explore: CCT testing
 	https://wcventure.github.io/pdf/ICSE2022_PERIOD.pdf
 */
 
+func tmpdir(t *testing.T) string {
+
+	d := os.Getenv("GORUN_TESTDIR")
+	if d != "" {
+		os.Mkdir(d, 0777) // assume many will race, so ignore error
+		d = filepath.Join(d, t.Name())
+		os.Mkdir(d, 0777)
+		return d
+	}
+	return t.TempDir()
+}
+
 func TestMain(m *testing.M) {
 
 	get0 := func(key string) (value string, found bool) {
@@ -149,39 +161,39 @@ func template2str(t *testing.T, templateString string, m map[string]string) stri
 	return buffer.String()
 }
 
-/*
- */
 func TestCache(t *testing.T) {
+	// verify items expire
 	t.Parallel()
-	cacheDir := t.TempDir()
-
-	//testTime := time.Now() // we control the clock now
+	cacheDir := tmpdir(t)
+	// debug: rm -rf tmp; GORUN_TESTDIR=$(pwd)/tmp go test ./cache
 
 	config, err := newConfig(cacheDir, time.Millisecond*30)
 
-	//config.testTime = &testTime //timeNow = func() time.Time { return testTime }
+	create := func(key string) {
+		_, err := config.Lookup(key, func(objdir string) error {
+			err := os.WriteFile(objdir+"/some-file", []byte("abc"), 0666)
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	if err != nil {
 		t.Fatalf("failed to create cache %s", err)
 	}
-	olist := make([]string, 0, 100) // high capacity so we can pass by reference
 
-	//fmt.Println("* time t0 ", testTime)
-	objdir1 := newEntry(t, config, "bb", olist)
-	objdir2 := newEntry(t, config, "b2", olist)
+	create("bb")
+	create("b2")
+	expectCountFiles(t, cacheDir, "some-", 2)
 
-	if objdir1 == objdir2 {
-		t.Fatalf("failed")
-	}
 	// advance time so that cache is expired
-	// testTime = testTime.Add(time.Millisecond * 31)
 	time.Sleep(time.Millisecond * 40)
-	fmt.Println("========================")
-	objdir3 := newEntry(t, config, "b3", olist)
 
-	if objdir3 == objdir1 || objdir3 == objdir2 {
-		t.Fatalf("lookup returned old existing object %s !", objdir3)
-	}
+	config.TrimPeriodically()
+
+	create("b3")
+	expectCountFiles(t, cacheDir, "some-", 1)
 
 }
 
@@ -212,9 +224,10 @@ func TestRefresh(t *testing.T) {
 
 	// verify repeated lookups keep item alive past normal expire
 
-	for range []int{1, 2, 3, 4, 5, 6} {
+	for i := range []int{1, 2, 3, 4, 5, 6} {
 		objdir2, err := config.Lookup("bb", func(objdir string) error {
-			t.Fatalf("unexpected create event")
+			t.Fatalf("unexpected create event, at i=%d", i)
+			// flaky: cache_test.go:229: unexpected create event
 			return nil
 		})
 		if err != nil {
@@ -229,43 +242,9 @@ func TestRefresh(t *testing.T) {
 
 }
 
-func newEntry(t *testing.T, config *Config, hashOfInput string, olist []string) string {
-	n := len(olist)
-	isNew := false
-	objdir1, err := config.Lookup(hashOfInput, func(objdir string) error {
-		isNew = true
-		os.WriteFile(objdir+"/some-"+hashOfInput+"-file", []byte(hashOfInput+hashOfInput), 0666)
-		olist = append(olist, objdir)
-		//fmt.Println("* x1")
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("Lookup failed with %s", err)
-	}
-	//fmt.Println("* x2")
-	if len(olist) != n+1 {
-		t.Fatalf("failed to get create event for input %s", hashOfInput)
-	}
-	if !isNew || !filepath.IsAbs(objdir1) {
-		t.Fatalf("failed for hashOfInput %s", hashOfInput)
-	}
-
-	found := true
-	objdir2, err := config.Lookup(hashOfInput, func(objdir string) error {
-		t.Fatalf("did not expect create event hashOfInput %s", hashOfInput)
-		found = false
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("Lookup failed with %s", err)
-	}
-	if !found || objdir1 != objdir2 || !filepath.IsAbs(objdir2) {
-		t.Fatalf("lookup after create failed for hashOfInput %s", hashOfInput)
-	}
-	return objdir2
-}
-
 func TestHash(t *testing.T) {
+	// find simple keys that have the same hash (for tests)
+	// GORUN_HASH=a go test -v ./cache -run TestHash
 	if os.Getenv("GORUN_HASH") == "" {
 		t.Skip()
 	}
@@ -312,9 +291,10 @@ func TestLookup(t *testing.T) {
 }
 
 func TestLookup2(t *testing.T) {
-	// test basic cache lookup
+	// verify concurrent create run in parallel
 	t.Parallel()
-	// GORUN_HASH=aa make hash # shows key=pm hash same hash prefix
+	// GORUN_HASH=aa go test -v ./cache -run TestHash
+	// => shows key 'pm' has same hash prefix
 
 	t1 := time.Now()
 	out := runProcessList(t, template2str(t, `
@@ -329,7 +309,11 @@ func TestLookup2(t *testing.T) {
 		// if concurrent, we expect 150ms
 		// else 250ms
 		t.Fatalf("cache too slow: %s", dt)
+		// flaky: cache_test.go:332: cache too slow: 278.636916ms
+		// flaky: cache_test.go:331: cache too slow: 324.422417ms
+		// go test -v ./cache -run TestLookup2 -count 1
 	}
+	fmt.Printf("dt = %s\n", dt)
 	s := strings.Join(out, ",")
 	expect := "NEW,NEW,FOUND"
 	if s != expect {
@@ -430,12 +414,8 @@ func TestInternals(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
-
 	t.Parallel()
-
 	d := t.TempDir()
-
-	//m := map[string]any{"tmpdir64": str2base64(d)}
 
 	config, err := newConfig(d, time.Millisecond*200)
 	if err != nil {
