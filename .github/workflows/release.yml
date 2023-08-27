@@ -20,14 +20,16 @@ jobs:
       -
         name: build-and-release
         run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o gorun.linux-amd64
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o gorun.linux-arm64
-          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o gorun.darwin-amd64
-          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o gorun.darwin-arm64
+          CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build ./cmd/gorun -o gorun.linux-amd64
+          CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build ./cmd/gorun -o gorun.linux-arm64
+          CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build ./cmd/gorun -o gorun.darwin-amd64
+          CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build ./cmd/gorun -o gorun.darwin-arm64
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./cmd/gorun -o gorun.windows-amd64
           gh release upload ${{ github.ref_name }} gorun.linux-amd64
           gh release upload ${{ github.ref_name }} gorun.linux-arm64
           gh release upload ${{ github.ref_name }} gorun.darwin-amd64
           gh release upload ${{ github.ref_name }} gorun.darwin-arm64
+          gh release upload ${{ github.ref_name }} gorun.windows-amd64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
