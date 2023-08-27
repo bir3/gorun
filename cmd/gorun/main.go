@@ -20,7 +20,7 @@ import (
 )
 
 func GorunVersion() string {
-	return "0.4.1"
+	return "0.4.2"
 }
 
 func readFileAndStrip(filename string) string {
