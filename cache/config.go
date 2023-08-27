@@ -131,6 +131,14 @@ func NewConfig(dir string, maxAge time.Duration) (*Config, error) {
 	return newConfig(dir, maxAge)
 }
 
+func writeREADME(dir string) {
+	s := `
+cache folder maintained by https://github.com/bir3/gorun
+	`
+	s = strings.TrimSpace(s) + "\n"
+	os.WriteFile(filepath.Join(dir, "README"), []byte(s), 0666)
+}
+
 func newConfig(dir string, maxAge time.Duration) (*Config, error) {
 	if maxAge < 10*time.Millisecond {
 		return nil, fmt.Errorf("internal maxAge minimum is 10 milliseconds")
@@ -173,6 +181,8 @@ func newConfig(dir string, maxAge time.Duration) (*Config, error) {
 					return err
 				}
 			}
+
+			writeREADME(dir)
 
 			return writeString(final)
 		} else {

@@ -18,17 +18,6 @@ import (
 	"time"
 )
 
-/* requirements:
-    - if two or more P race to the same key and one process has started to create entry
-      but fails before completion, another P will take over the task
-   	- protect against user error: if cache-dir is set to root '/', delete operation should delete
-      zero or very few files
-   	- if user creates symlinks in cache dir, delete should only delete symlinks
-   	- out-of-disk space should not corrupt the cache, only fail it
-      => need validation of entry data, e.g. guard against truncation
-   	- graceful failure: if locks are no-op, cache should still work mostly ok
-*/
-
 func jsonString(m map[string]string) (string, error) {
 
 	buf, err := json.Marshal(m)
@@ -139,6 +128,10 @@ func randomHash() string {
 	return hashString(uid)
 }
 
+// input should be a string that represents a complete description of a
+// repeatable computation (command line equivalent, environment variables,
+// input file contents, executable contents).
+// returns outdir
 func Lookup(input string, create func(outDir string) error) (string, error) {
 	config, err := DefaultConfig()
 	if err != nil {

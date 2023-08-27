@@ -1,4 +1,5 @@
 sandbox/
-./gorun
 Makefile
 test
+cmd/gorun/gorun
+gorun
