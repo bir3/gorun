@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -60,11 +61,12 @@ func showUsage() {
 usage:
   gorun [gorun options] <filename> [program options]
 
-  -h    show this help
-  -v    show version
-  -c    show cache size
-  -show show code cache location
-  -trim clean cache now
+  -h     show this help
+  -v     show version
+  -c     show cache size
+  -show  show code cache location
+  -shell enter shell at cache location
+  -trim  clean cache now
 
   filename or "-" for stdin; first line can be #! /usr/bin/env gorun
 `
@@ -93,7 +95,8 @@ func main() {
 		return
 	}
 
-	showFlag := false
+	show := false
+	shell := false
 	trimFlag := false
 	showVersion := false
 	showCache := false
@@ -117,7 +120,9 @@ func main() {
 				showCache = true
 			case "-show":
 				// show code
-				showFlag = true
+				show = true
+			case "-shell":
+				shell = true
 			case "-trim":
 				trimFlag = true
 			default:
@@ -184,12 +189,52 @@ func main() {
 		errExit(fmt.Sprintf("cache init failed: %s", err))
 	}
 
-	info := gorun.RunInfo{}
-	info.ShowFlag = showFlag
-	info.Input = fmt.Sprintf("// gorun: %s\n", GorunVersion())
-	err = gorun.ExecString(c, s, programArgs, info)
+	// input must embed everything that affects the computation:
+	// = executables, env-vars, commandline
+	input := fmt.Sprintf("// gorun: %s\n", GorunVersion())
+	outdir, err := gorun.CompileString(c, s, programArgs, input)
 
-	if err != nil {
-		errExit(fmt.Sprintf("execute failed: %s", err))
+	showBuildInstructions := func() {
+		exe, _ := os.Executable()
+		fmt.Printf("# how to build:\n")
+		fmt.Printf(" cd %s\n", outdir)
+		fmt.Printf(" GOCOMPILER_TOOL=go %s build\n", exe)
 	}
+
+	if show {
+		showBuildInstructions()
+	} else if shell {
+		showBuildInstructions()
+
+		sh := os.Getenv("SHELL")
+		if sh == "" {
+			sh = "/bin/sh"
+		}
+		fmt.Printf("# entering shell %s\n", sh)
+		cmd := exec.Command(sh) // 2
+		cmd.Dir = outdir
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		err = cmd.Run()
+		if err != nil {
+			fmt.Printf("ERROR: %s\n", err)
+		}
+	} else {
+		// normal exec
+		if err == nil {
+			exefile := filepath.Join(outdir, "main")
+			// no lock => only thing protecting the executable is a recent timestamp
+			err = gorun.Exec(exefile, args)
+			if err != nil {
+				errExit(fmt.Sprintf("exec failed: %s", err))
+			}
+			errExit("exec should not return")
+		} else {
+			fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
+			os.Exit(17)
+		}
+	}
+
 }

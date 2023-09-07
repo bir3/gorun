@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/bir3/gocompiler"
 	"github.com/bir3/gorun/cache"
@@ -56,37 +55,18 @@ func compile(c *cache.Config, srcfile string, exefile string) error {
 	return err
 }
 
-func show(outdir string, inputPart string) {
-	exe, _ := os.Executable()
-	fmt.Printf("# how to compile manually:\n")
-	fmt.Printf(" cd %s\n", outdir)
-	fmt.Printf(" GOCOMPILER_TOOL=go %s build\n", exe)
-}
-
-type RunInfo struct {
-	Input    string
-	ShowFlag bool
-}
-
-func ExecString(c *cache.Config, goCode string, args []string, info RunInfo) error {
+func CompileString(c *cache.Config, goCode string, args []string, input string) (string, error) {
 
 	// must add everything that affects the computation:
 	// = input file, executables, env-vars, commandline
 	//
-	input := info.Input
 
 	input += fmt.Sprintf("// gocompiler: %s\n", gocompiler.GoVersion())
 	input += fmt.Sprintf("// env.CGO_ENABLED: %s\n", os.Getenv("CGO_ENABLED"))
 	input += "//\n"
 	input += fmt.Sprintf("%s\n", goCode)
 
-	showPending := info.ShowFlag
-	show := func(outdir string) {
-		if showPending {
-			show(outdir, input[0:strings.Index(input, "\n//\n")])
-			showPending = false
-		}
-	}
+	incompleteOutdir := ""
 
 	createCalled := false
 	outdir, err := c.Lookup(input, func(outdir string) error {
@@ -107,28 +87,21 @@ func ExecString(c *cache.Config, goCode string, args []string, info RunInfo) err
 			return err
 		}
 		err := create()
-		show(outdir) // outdir only here if error during compile
+		incompleteOutdir = outdir // outdir only here if error during compile
 		return err
 	})
 
+	if outdir == "" {
+		outdir = incompleteOutdir
+	}
+
 	if err == nil && createCalled {
-		// create item called (no cached item found)
+		// create called = no cached item found
 		// => we are already on a slow path
 		// => check if cache trim should occur
-		err = c.TrimPeriodically()
+		c.TrimPeriodically() // NOTE: error ignored - should be visible on request
 	}
 
-	if err != nil {
-		return err
-	}
+	return outdir, err
 
-	show(outdir) // outdir only here if found in cache
-
-	exefile := filepath.Join(outdir, "main")
-	// no lock => only thing protecting the executable is a recent timestamp
-
-	if !info.ShowFlag {
-		return sysExec(exefile, args)
-	}
-	return nil
 }

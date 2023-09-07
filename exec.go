@@ -6,7 +6,7 @@ import (
 	"syscall"
 )
 
-func sysExec(exefile string, args []string) error {
+func Exec(exefile string, args []string) error {
 	args2 := []string{exefile}
 	args2 = append(args2, args...)
 	err := syscall.Exec(exefile, args2, os.Environ())

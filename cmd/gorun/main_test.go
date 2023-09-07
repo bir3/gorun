@@ -231,11 +231,14 @@ func main() {
 		os.Exit(7)
 	}
 	args := []string{}
-	err = gorun.ExecString(config, goCode, args, gorun.RunInfo{})
+	outdir, err := gorun.CompileString(config, goCode, args, "")
 	if err != nil {
 		fmt.Printf("RunString failed - %s\n", err)
 		os.Exit(8)
 	}
-	fmt.Printf("RunString should never return")
+	exefile := filepath.Join(outdir, "main")
+	// no lock => only thing protecting the executable is a recent timestamp
+	err = gorun.Exec(exefile, args)
+	fmt.Printf("RunString should never return, error = %s\n", err)
 	os.Exit(9)
 }
