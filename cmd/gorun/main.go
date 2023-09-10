@@ -20,10 +20,6 @@ import (
 	"github.com/bir3/gorun/cache"
 )
 
-func GorunVersion() string {
-	return "0.4.3"
-}
-
 func readFileAndStrip(filename string) string {
 	var s string
 	if filename == "-" {
@@ -145,7 +141,7 @@ func main() {
 	}
 
 	if showVersion {
-		fmt.Printf("gorun %s gocompiler %s\n", GorunVersion(), gocompiler.GoVersion())
+		fmt.Printf("gorun %s gocompiler %s\n", gorun.GorunVersion(), gocompiler.GoVersion())
 		return
 	}
 	if showCache {
@@ -191,7 +187,7 @@ func main() {
 
 	// input must embed everything that affects the computation:
 	// = executables, env-vars, commandline
-	input := fmt.Sprintf("// gorun: %s\n", GorunVersion())
+	input := fmt.Sprintf("// gorun: %s\n", gorun.GorunVersion())
 	outdir, err := gorun.CompileString(c, s, programArgs, input)
 
 	showBuildInstructions := func() {

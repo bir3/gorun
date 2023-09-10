@@ -14,6 +14,10 @@ import (
 	"github.com/bir3/gorun/cache"
 )
 
+func GorunVersion() string {
+	return "0.5.0"
+}
+
 type CompileError struct {
 	Stdout string
 	Stderr string
