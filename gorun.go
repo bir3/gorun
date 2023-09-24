@@ -9,13 +9,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/bir3/gocompiler"
 	"github.com/bir3/gorun/cache"
 )
 
 func GorunVersion() string {
-	return "0.5.0"
+	return "0.5.1"
 }
 
 type CompileError struct {
@@ -46,7 +47,9 @@ func compile(c *cache.Config, srcfile string, exefile string) error {
 		err = cmd.Run()
 
 		if err != nil {
-			return &CompileError{out.String(), outerr.String(), err}
+			var err error = &CompileError{out.String(), outerr.String(), err}
+			cmdline := strings.Join(args, " ")
+			return fmt.Errorf("# cd %s\n# %s\n%w", cmd.Dir, cmdline, err)
 		}
 		return nil
 	}
@@ -66,6 +69,7 @@ func CompileString(c *cache.Config, goCode string, args []string, input string) 
 	//
 
 	input += fmt.Sprintf("// gocompiler: %s\n", gocompiler.GoVersion())
+	input += fmt.Sprintf("// gorun: %s\n", GorunVersion())
 	input += fmt.Sprintf("// env.CGO_ENABLED: %s\n", os.Getenv("CGO_ENABLED"))
 	input += "//\n"
 	input += fmt.Sprintf("%s\n", goCode)

@@ -170,15 +170,17 @@ func (config *Config) Lookup2(input string, userCreate func(outDir string) error
 			}
 			err = userCreate(outdir)
 			if err != nil {
-				config.safeRemoveAll2(datafile, outdir)
+				// keep folder so user can debug problem
 				return err
 			}
 			var obj Item
 			obj.objdir = outdir
 			obj.refresh()
+			//
+			// careful: next line is commit
 			err = writeString(item2str(obj))
 			if err != nil {
-				config.safeRemoveAll2(datafile, outdir)
+				// keep folder so user can debug problem
 				return err
 			}
 			return nil
