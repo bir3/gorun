@@ -56,6 +56,19 @@ RUN chmod 755 simple.gorun
 	return s
 }
 
+func tempDir(t *testing.T) string {
+	dir := os.Getenv("GORUN_TESTDIR")
+	if dir != "" {
+		dir = filepath.Join(dir, t.Name())
+		err := os.MkdirAll(dir, 0777)
+		if err != nil {
+			t.Fatalf("%s", err)
+		}
+		return dir
+	}
+	return t.TempDir()
+}
+
 func testDist(t *testing.T, dist string) {
 
 	if testing.Short() {
@@ -63,7 +76,8 @@ func testDist(t *testing.T, dist string) {
 	}
 
 	help := "# run with go test -short to skip this test"
-	dir := t.TempDir()
+	help += "\n" + "# run with GORUN_TESTDIR=<folder> to inspect Dockerfile"
+	dir := tempDir(t)
 	s := getDockerfile(t, dist)
 
 	f := filepath.Join(dir, "Dockerfile")
