@@ -1,4 +1,4 @@
-package gorun_test // black box
+package gorun_test
 
 import (
 	"os"
@@ -10,30 +10,26 @@ import (
 	"github.com/bir3/gorun"
 )
 
-func getDockerfile(t *testing.T, dist string) string {
-	gorunVersion := gorun.GorunVersion()
+func getDockerfile(t *testing.T, dist string) (string, string) {
+
 	var s string
+	url := "https://github.com/bir3/gorun/releases/download/v$VERSION/gorun.linux-arm64"
+	url = strings.ReplaceAll(url, "$VERSION", gorun.GorunVersion())
 	m := make(map[string]string)
 	m["alpine"] = `
 FROM alpine
 
-RUN wget https://github.com/bir3/gorun/releases/download/v${version}/gorun.linux-arm64 && \
-		mv gorun.linux-arm64 gorun && \
-		chmod 755 gorun
-
+RUN wget $URL && mv gorun.linux-arm64 gorun && chmod 755 gorun
 `
 
 	m["ubuntu"] = `
 FROM ubuntu:23.04
 
 RUN apt-get update && apt-get install -y wget
-RUN wget https://github.com/bir3/gorun/releases/download/v0.5.1/gorun.linux-arm64 && \
-		mv gorun.linux-arm64 gorun && \
-		chmod 755 gorun
-
+RUN wget $URL && mv gorun.linux-arm64 gorun && chmod 755 gorun
 `
 
-	s = m[dist]
+	s = strings.ReplaceAll(m[dist], "$URL", url)
 
 	s += `
 ENV PATH=/:$PATH
@@ -52,8 +48,8 @@ END
 
 RUN chmod 755 simple.gorun	
 `
-	s = strings.ReplaceAll(s, "${version}", gorunVersion)
-	return s
+
+	return url, s
 }
 
 func tempDir(t *testing.T) string {
@@ -74,11 +70,12 @@ func testDist(t *testing.T, dist string) {
 	if testing.Short() {
 		t.Skip() // go test -short
 	}
+	dir := tempDir(t)
+	url, s := getDockerfile(t, dist)
 
 	help := "# run with go test -short to skip this test"
 	help += "\n" + "# run with GORUN_TESTDIR=<folder> to inspect Dockerfile"
-	dir := tempDir(t)
-	s := getDockerfile(t, dist)
+	help += "\n" + "# url: " + url
 
 	f := filepath.Join(dir, "Dockerfile")
 	err := os.WriteFile(f, []byte(s), 0666)
