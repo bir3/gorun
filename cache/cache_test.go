@@ -161,6 +161,22 @@ func template2str(t *testing.T, templateString string, m map[string]string) stri
 	return buffer.String()
 }
 
+func TestMkdirAllRace(t *testing.T) {
+	dir := t.TempDir()
+	dir = filepath.Join(dir, "a", "b", "c")
+	err := mkdirAllRace(dir)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+	if !info.IsDir() {
+		t.Fatal("failed")
+	}
+}
+
 func TestCache(t *testing.T) {
 	// verify items expire
 	t.Parallel()

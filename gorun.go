@@ -16,7 +16,7 @@ import (
 )
 
 func GorunVersion() string {
-	return "0.5.1"
+	return "0.5.2"
 }
 
 type CompileError struct {

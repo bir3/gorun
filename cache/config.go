@@ -45,6 +45,7 @@ func panicIf(doPanic bool) {
 
 func mkdirAllRace(dir string) error {
 	// safe for many processes to run concurrently
+	dir = filepath.Clean(dir)
 	if !filepath.IsAbs(dir) {
 		return fmt.Errorf("program error: folder is not absolute path: %s", dir)
 	}
@@ -58,13 +59,14 @@ func mkdirAllRace(dir string) error {
 
 	// at the end, we want a folder to exist
 	// - no matter who created it:
-	missing, err = missingFolders(dir, []string{})
+	info, err := os.Stat(dir)
 	if err != nil {
 		return fmt.Errorf("failed to create folder %s - %w", dir, err)
 	}
-	if len(missing) > 0 {
-		return fmt.Errorf("failed to create folder %s", dir)
+	if !info.IsDir() {
+		return fmt.Errorf("not a folder %s", dir)
 	}
+
 	return nil
 }
 
@@ -77,7 +79,7 @@ func missingFolders(dir string, missing []string) ([]string, error) {
 			}
 			return []string{}, fmt.Errorf("not a folder: %s", dir)
 		}
-		missing = append(missing, dir)
+		missing = append([]string{dir}, missing...) // prepend => reverse order
 		d2 := filepath.Dir(dir)
 		if d2 == dir {
 			break
