@@ -73,6 +73,8 @@ func testDist(t *testing.T, dist string) {
 	dir := tempDir(t)
 	url, s := getDockerfile(t, dist)
 
+	t.Logf("url %s\n", url)
+
 	help := "# run with go test -short to skip this test"
 	help += "\n" + "# run with GORUN_TESTDIR=<folder> to inspect Dockerfile"
 	help += "\n" + "# url: " + url
