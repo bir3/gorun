@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/bir3/gocompiler/extra"
 )
 
 type Config struct {
@@ -41,52 +43,6 @@ func panicIf(doPanic bool) {
 	if doPanic {
 		panic("program error")
 	}
-}
-
-func mkdirAllRace(dir string) error {
-	// safe for many processes to run concurrently
-	dir = filepath.Clean(dir)
-	if !filepath.IsAbs(dir) {
-		return fmt.Errorf("program error: folder is not absolute path: %s", dir)
-	}
-	missing, err := missingFolders(dir, []string{})
-	if err != nil {
-		return err
-	}
-	for _, d2 := range missing {
-		os.Mkdir(d2, 0777) // ignore error as we may race
-	}
-
-	// at the end, we want a folder to exist
-	// - no matter who created it:
-	info, err := os.Stat(dir)
-	if err != nil {
-		return fmt.Errorf("failed to create folder %s - %w", dir, err)
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("not a folder %s", dir)
-	}
-
-	return nil
-}
-
-func missingFolders(dir string, missing []string) ([]string, error) {
-	for {
-		info, err := os.Stat(dir)
-		if err == nil {
-			if info.IsDir() {
-				return missing, nil
-			}
-			return []string{}, fmt.Errorf("not a folder: %s", dir)
-		}
-		missing = append([]string{dir}, missing...) // prepend => reverse order
-		d2 := filepath.Dir(dir)
-		if d2 == dir {
-			break
-		}
-		dir = d2
-	}
-	return []string{}, fmt.Errorf("program error at folder: %s", dir)
 }
 
 func (config *Config) Dir() string {
@@ -156,7 +112,7 @@ func newConfig(dir string, maxAge time.Duration) (*Config, error) {
 
 	config := &Config{dir, maxAge, regexp.MustCompile(`^[a-z0-9]{2}-t$`), regexp.MustCompile(`^[a-z0-9]{40}$`)}
 
-	mkdirAllRace(dir)
+	extra.MkdirAllRace(dir, 0777)
 
 	m := make(map[string]string)
 

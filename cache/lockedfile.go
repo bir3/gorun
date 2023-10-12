@@ -12,7 +12,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/bir3/gorun/filelock"
+	"github.com/bir3/gocompiler/extra/filelock"
 )
 
 type LockType int

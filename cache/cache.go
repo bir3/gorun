@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/bir3/gocompiler/extra"
 )
 
 func jsonString(m map[string]string) (string, error) {
@@ -153,7 +155,7 @@ func (config *Config) Lookup2(input string, userCreate func(outDir string) error
 	lockfile := pair.lockfile
 	datafile := pair.datafile
 
-	err := mkdirAllRace(pair.dir())
+	err := extra.MkdirAllRace(pair.dir(), 0777)
 	if err != nil {
 		return "/invalid/outdir/1", fmt.Errorf("failed to create prefix dir %q - %w", pair.dir(), err)
 	}
